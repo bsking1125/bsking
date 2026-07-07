@@ -89,41 +89,7 @@
 </head>
 <body>
 
-<!-- 1단계: 파이어베이스 설정 화면 (최초 1회) -->
-<div id="setupGate" class="center-screen" style="display:none;">
-  <div class="center-box" style="max-width:520px;">
-    <h1>Firebase 연결 설정</h1>
-    <div class="sub">이 앱은 Firebase(구글의 서버 서비스)를 저장소로 써요. 아래 순서대로 한 번만 설정하면 돼요.</div>
-    <div class="info-box">1) firebase.google.com/console 접속 → 프로젝트 만들기
-2) 왼쪽 메뉴에서 "Firestore Database" 만들기 (프로덕션 모드로 시작해도 OK, 아래 규칙을 붙여넣을 거예요)
-3) 왼쪽 메뉴 "Authentication" → Sign-in method → 이메일/비밀번호 사용 설정
-4) Authentication → Users 탭에서 팀원 이메일/임시비밀번호를 직접 추가 (회원가입 화면은 따로 없어요, 관리자가 직접 등록)
-5) 프로젝트 설정(톱니바퀴) → 일반 → "내 앱" → 웹 앱 추가 → 나오는 firebaseConfig 객체를 통째로 복사해서 아래에 붙여넣기</div>
-    <div class="info-box" style="background:var(--amber-tint); border-color:var(--amber); color:var(--amber);">Firestore 규칙(꼭 설정)! Firestore Database → 규칙 탭에 아래 내용을 붙여넣어 로그인한 사람만 읽고 쓸 수 있게 해주세요.<div class="code-box">rules_version = '2';
-service cloud.firestore {
-  match /databases/{database}/documents {
-    match /{document=**} {
-      allow read, write: if request.auth != null;
-    }
-  }
-}</div></div>
-    <div class="field">
-      <label>firebaseConfig 붙여넣기 (콘솔에 나온 그대로, { } 포함)</label>
-      <textarea id="fbConfigInput" rows="7" placeholder='{
-  apiKey: "AIza...",
-  authDomain: "xxx.firebaseapp.com",
-  projectId: "xxx",
-  storageBucket: "xxx.appspot.com",
-  messagingSenderId: "...",
-  appId: "..."
-}'></textarea>
-    </div>
-    <button class="primary-btn" id="saveFbConfigBtn" style="width:100%;">저장하고 시작하기</button>
-    <div class="error-text" id="fbConfigError"></div>
-  </div>
-</div>
-
-<!-- 2단계: 로그인 화면 -->
+<!-- 로그인 화면 -->
 <div id="loginGate" class="center-screen" style="display:none;">
   <div class="center-box">
     <h1>공통창고 재고 관리</h1>
@@ -135,14 +101,12 @@ service cloud.firestore {
     <div style="text-align:center; margin-top:14px;">
       <button class="link-btn" id="forgotPwBtn">비밀번호를 잊으셨나요? (재설정 메일 보내기)</button>
     </div>
-    <div style="text-align:center; margin-top:18px;">
-      <button class="link-btn" id="reconfigureFbBtn" style="color:var(--ink-soft);">Firebase 설정 다시 하기</button>
-    </div>
   </div>
 </div>
 
-<!-- 3단계: 앱 본체 -->
+<!-- 앱 본체 -->
 <div class="wrap" id="appWrap" style="display:none;">
+
   <div class="topbar">
     <div>
       <div class="title">공통창고 재고 관리</div>
@@ -290,52 +254,19 @@ function fmtDate(ts) {
   return d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
 }
 
-/* ============ 1단계: Firebase 설정 저장/로드 ============ */
-const FB_CONFIG_KEY = 'wh_firebase_config_v1';
-function getSavedFbConfig() {
-  try { return JSON.parse(localStorage.getItem(FB_CONFIG_KEY) || 'null'); } catch (e) { return null; }
-}
-function parseConfigInput(text) {
-  // 사람들이 보통 콘솔에서 import문 · 주석 · 초기화 코드까지 통째로 복사해서 붙여넣는 경우가 많아서,
-  // "firebaseConfig" 라는 글자가 나온 뒤에 처음 등장하는 "{ ... }" 짝을 찾아 그 부분만 뽑아내요.
-  // (앞뒤에 다른 코드가 섞여 있어도 괜찮게 만든 거예요)
-  const keywordIdx = text.indexOf('firebaseConfig');
-  const searchFrom = keywordIdx === -1 ? 0 : keywordIdx;
-  const start = text.indexOf('{', searchFrom);
-  if (start === -1) throw new Error('{ } 형태의 설정 객체를 찾지 못했어요');
-  let depth = 0, end = -1;
-  for (let i = start; i < text.length; i++) {
-    if (text[i] === '{') depth++;
-    else if (text[i] === '}') { depth--; if (depth === 0) { end = i; break; } }
-  }
-  if (end === -1) throw new Error('여는 중괄호 { 에 대응하는 닫는 중괄호 } 를 찾지 못했어요');
-  const objText = text.slice(start, end + 1);
-  return Function('"use strict"; return (' + objText + ');')();
-}
-document.getElementById('saveFbConfigBtn').addEventListener('click', () => {
-  const raw = document.getElementById('fbConfigInput').value;
-  const errEl = document.getElementById('fbConfigError');
-  try {
-    const cfg = parseConfigInput(raw);
-    if (!cfg.apiKey || !cfg.projectId) throw new Error('apiKey / projectId가 없어요');
-    localStorage.setItem(FB_CONFIG_KEY, JSON.stringify(cfg));
-    location.reload();
-  } catch (e) {
-    errEl.textContent = '설정을 읽지 못했어요. firebaseConfig 객체를 그대로 복사했는지 확인해주세요. (' + e.message + ')';
-  }
-});
-document.getElementById('reconfigureFbBtn').addEventListener('click', () => {
-  if (!confirm('Firebase 설정을 지우고 다시 입력할까요?')) return;
-  localStorage.removeItem(FB_CONFIG_KEY);
-  location.reload();
-});
-
-const savedFbConfig = getSavedFbConfig();
-if (!savedFbConfig) {
-  document.getElementById('setupGate').style.display = 'flex';
-} else {
-  startApp(savedFbConfig);
-}
+/* ============ Firebase 설정 (이 회사 전용으로 코드 안에 고정) ============ */
+// apiKey는 비밀번호가 아니라 "이 프로젝트를 가리키는 주소" 역할이라 코드에 그대로 넣어도 안전해요.
+// 실제 보안은 Firestore 규칙(로그인한 사람만 읽고 쓰기)이 담당해요.
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyCsJidfl-KBsVqe3A8ALvnbQa51mUVk7EI",
+  authDomain: "kingbs.firebaseapp.com",
+  projectId: "kingbs",
+  storageBucket: "kingbs.firebasestorage.app",
+  messagingSenderId: "1078471064836",
+  appId: "1:1078471064836:web:2261c6ebe9e14474042451",
+  measurementId: "G-J3PC2LYE6E"
+};
+startApp(FIREBASE_CONFIG);
 
 function startApp(fbConfig) {
   firebase.initializeApp(fbConfig);
@@ -365,7 +296,6 @@ function startApp(fbConfig) {
   document.getElementById('logoutBtn').addEventListener('click', () => auth.signOut());
 
   auth.onAuthStateChanged(user => {
-    document.getElementById('setupGate').style.display = 'none';
     if (user) {
       document.getElementById('loginGate').style.display = 'none';
       document.getElementById('appWrap').style.display = '';
