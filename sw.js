@@ -1,6 +1,8 @@
 // 앱 껍데기(화면 파일들)만 캐시해서 오프라인에서도 앱이 열리게 해줘요.
 // 데이터는 어차피 Firebase에서 실시간으로 받아오는 거라, 그쪽 요청은 건드리지 않고 그냥 통과시켜요.
-const CACHE_NAME = 'wh-app-shell-v1';
+// 전략: 인터넷이 되면 항상 최신 파일을 먼저 받아오고, 안 될 때만 저장해둔 걸로 대체해요
+// (한창 기능을 계속 고치는 중이라, "일단 저장해둔 거 먼저 보여주기"보다 이게 더 맞아요).
+const CACHE_NAME = 'wh-app-shell-v2';
 const APP_SHELL = [
   './',
   './index.html',
@@ -34,15 +36,12 @@ self.addEventListener('fetch', event => {
   if (url.origin !== location.origin) return; // firebase/구글 API 요청은 그대로 네트워크로
 
   event.respondWith(
-    caches.match(event.request).then(cached => {
-      const network = fetch(event.request).then(res => {
-        if (res && res.ok) {
-          const copy = res.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
-        }
-        return res;
-      }).catch(() => cached);
-      return cached || network;
-    })
+    fetch(event.request).then(res => {
+      if (res && res.ok) {
+        const copy = res.clone();
+        caches.open(CACHE_NAME).then(cache => cache.put(event.request, copy));
+      }
+      return res;
+    }).catch(() => caches.match(event.request))
   );
 });
