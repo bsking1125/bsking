@@ -55,6 +55,7 @@
   .tab-btn { background: none; border: none; padding: 10px 14px; font-size: 13px; font-weight: 600; color: var(--ink-soft); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
   .tab-btn.active { color: var(--primary-dark); border-bottom-color: var(--primary); }
   .tab-btn:hover { color: var(--ink); }
+  .count-badge { display:inline-block; background: var(--red); color:#fff; font-size:10px; font-weight:700; border-radius:9px; padding:1px 6px; margin-left:5px; }
   .section-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
   .add-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
   .add-row input, .add-row select { flex: 1; min-width: 120px; }
@@ -89,22 +90,51 @@
 </head>
 <body>
 
-<!-- 로그인 화면 -->
+<!-- 로그인 / 회원가입 화면 -->
 <div id="loginGate" class="center-screen" style="display:none;">
   <div class="center-box">
-    <h1>공통창고 재고 관리</h1>
-    <div class="sub">관리자가 만들어준 이메일/비밀번호로 로그인해주세요.</div>
-    <div class="field"><label>이메일</label><input type="email" id="loginEmailInput" autocomplete="username"></div>
-    <div class="field"><label>비밀번호</label><input type="password" id="loginPasswordInput" autocomplete="current-password"></div>
-    <button class="primary-btn" id="loginSubmitBtn" style="width:100%;">로그인</button>
-    <div class="error-text" id="loginError"></div>
-    <div style="text-align:center; margin-top:14px;">
-      <button class="link-btn" id="forgotPwBtn">비밀번호를 잊으셨나요? (재설정 메일 보내기)</button>
+    <h1>최뚜비</h1>
+    <div class="tab-nav" style="margin-bottom:18px;">
+      <button class="tab-btn active" id="showLoginTabBtn" style="flex:1; text-align:center;">로그인</button>
+      <button class="tab-btn" id="showSignupTabBtn" style="flex:1; text-align:center;">회원가입</button>
+    </div>
+
+    <div id="loginForm">
+      <div class="sub">이메일/비밀번호로 로그인해주세요.</div>
+      <div class="field"><label>이메일</label><input type="email" id="loginEmailInput" autocomplete="username"></div>
+      <div class="field"><label>비밀번호</label><input type="password" id="loginPasswordInput" autocomplete="current-password"></div>
+      <button class="primary-btn" id="loginSubmitBtn" style="width:100%;">로그인</button>
+      <div class="error-text" id="loginError"></div>
+      <div style="text-align:center; margin-top:14px;">
+        <button class="link-btn" id="forgotPwBtn">비밀번호를 잊으셨나요? (재설정 메일 보내기)</button>
+      </div>
+    </div>
+
+    <div id="signupForm" style="display:none;">
+      <div class="sub">팀에서 알려준 가입 코드가 있어야 가입할 수 있어요.</div>
+      <div class="field"><label>이메일</label><input type="email" id="signupEmailInput" autocomplete="username"></div>
+      <div class="field"><label>비밀번호 (6자 이상)</label><input type="password" id="signupPasswordInput" autocomplete="new-password"></div>
+      <div class="field"><label>비밀번호 확인</label><input type="password" id="signupPasswordConfirmInput" autocomplete="new-password"></div>
+      <div class="field"><label>가입 코드</label><input type="text" id="signupCodeInput" autocomplete="off"></div>
+      <button class="primary-btn" id="signupSubmitBtn" style="width:100%;">가입하기</button>
+      <div class="error-text" id="signupError"></div>
     </div>
   </div>
 </div>
 
 <!-- 앱 본체 -->
+<!-- 승인 대기 화면 -->
+<div id="pendingGate" class="center-screen" style="display:none;">
+  <div class="center-box" style="text-align:center;">
+    <h1>승인 대기 중</h1>
+    <div class="sub">가입은 완료됐어요. 관리자가 승인하면 바로 이용할 수 있어요. 이 화면은 승인되면 자동으로 넘어가요.</div>
+    <div class="user-chip" style="justify-content:center; margin-top:14px;">
+      <span id="pendingUserEmail"></span>
+      <button class="ghost-btn" id="pendingLogoutBtn">로그아웃</button>
+    </div>
+  </div>
+</div>
+
 <div class="wrap" id="appWrap" style="display:none;">
 
   <div class="topbar">
@@ -125,6 +155,15 @@
     <button class="tab-btn" data-tab="sale">매출 (-)</button>
     <button class="tab-btn" data-tab="move">창고 이동</button>
     <button class="tab-btn" data-tab="history">처리 기록</button>
+    <button class="tab-btn" data-tab="approvals" id="approvalsTabBtn" style="display:none;">가입 승인<span id="pendingCountBadge"></span></button>
+  </div>
+
+  <!-- 가입 승인 (관리자 전용) -->
+  <div class="tab-panel" data-panel="approvals" style="display:none;">
+    <div class="section-head">
+      <div><h2>가입 승인</h2><div class="desc">회원가입한 사람이 여기 뜨면 승인해줘야 앱을 쓸 수 있어요.</div></div>
+    </div>
+    <div id="approvalsListArea"></div>
   </div>
 
   <!-- 총 재고 -->
@@ -273,6 +312,13 @@ function startApp(fbConfig) {
   const auth = firebase.auth();
   const db = firebase.firestore();
 
+  // 승인 권한을 가진 이메일들 (여기에 있는 계정은 가입 승인 없이 항상 바로 이용 가능해요)
+  const ADMIN_EMAILS = ['qudtjd2222@gmail.com'];
+  function isAdminEmail(email) { return !!email && ADMIN_EMAILS.includes(email); }
+
+  // 자동 로그인: 한 번 로그인하면, 로그아웃하기 전까지는 앱을 다시 열어도 계속 로그인 상태가 유지돼요.
+  auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(() => {});
+
   /* ============ 2단계: 로그인 ============ */
   document.getElementById('loginSubmitBtn').addEventListener('click', () => {
     const email = document.getElementById('loginEmailInput').value.trim();
@@ -295,17 +341,132 @@ function startApp(fbConfig) {
   });
   document.getElementById('logoutBtn').addEventListener('click', () => auth.signOut());
 
-  auth.onAuthStateChanged(user => {
-    if (user) {
-      document.getElementById('loginGate').style.display = 'none';
-      document.getElementById('appWrap').style.display = '';
-      document.getElementById('currentUserEmail').textContent = user.email;
-      initRealtimeListeners();
-    } else {
-      document.getElementById('appWrap').style.display = 'none';
-      document.getElementById('loginGate').style.display = 'flex';
+  /* ============ 회원가입 ============ */
+  // 이 코드를 아는 사람만 가입할 수 있어요. 팀 안에서만 공유하고, 필요하면 이 값을 바꿔서
+  // GitHub에 다시 올리면 그 즉시 새 코드로 바뀌어요 (APK 재배포 필요 없음).
+  const SIGNUP_CODE = '최뚜비2026';
+
+  document.getElementById('showLoginTabBtn').addEventListener('click', () => {
+    document.getElementById('showLoginTabBtn').classList.add('active');
+    document.getElementById('showSignupTabBtn').classList.remove('active');
+    document.getElementById('loginForm').style.display = '';
+    document.getElementById('signupForm').style.display = 'none';
+  });
+  document.getElementById('showSignupTabBtn').addEventListener('click', () => {
+    document.getElementById('showSignupTabBtn').classList.add('active');
+    document.getElementById('showLoginTabBtn').classList.remove('active');
+    document.getElementById('signupForm').style.display = '';
+    document.getElementById('loginForm').style.display = 'none';
+  });
+
+  document.getElementById('signupSubmitBtn').addEventListener('click', async () => {
+    const email = document.getElementById('signupEmailInput').value.trim();
+    const pw = document.getElementById('signupPasswordInput').value;
+    const pw2 = document.getElementById('signupPasswordConfirmInput').value;
+    const code = document.getElementById('signupCodeInput').value.trim();
+    const errEl = document.getElementById('signupError');
+    errEl.textContent = '';
+
+    if (!email || !pw) { errEl.textContent = '이메일과 비밀번호를 입력해주세요.'; return; }
+    if (pw.length < 6) { errEl.textContent = '비밀번호는 6자 이상이어야 해요.'; return; }
+    if (pw !== pw2) { errEl.textContent = '비밀번호가 서로 달라요.'; return; }
+    if (code !== SIGNUP_CODE) { errEl.textContent = '가입 코드가 맞지 않아요. 팀에 문의해주세요.'; return; }
+
+    try {
+      const cred = await auth.createUserWithEmailAndPassword(email, pw);
+      await db.collection('users').doc(cred.user.uid).set({
+        email, approved: false, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      showToast('가입 완료! 관리자 승인을 기다려주세요.');
+      // 성공하면 onAuthStateChanged가 알아서 감지해서 승인 대기 화면으로 넘어가요.
+    } catch (err) {
+      if (err.code === 'auth/email-already-in-use') errEl.textContent = '이미 가입된 이메일이에요. 로그인 탭에서 로그인해주세요.';
+      else if (err.code === 'auth/invalid-email') errEl.textContent = '이메일 형식이 올바르지 않아요.';
+      else errEl.textContent = '가입에 실패했어요. (' + err.code + ')';
     }
   });
+
+  document.getElementById('pendingLogoutBtn').addEventListener('click', () => auth.signOut());
+
+  let unsubscribeOwnProfile = null;
+  auth.onAuthStateChanged(user => {
+    if (unsubscribeOwnProfile) { unsubscribeOwnProfile(); unsubscribeOwnProfile = null; }
+
+    if (!user) {
+      if (approvalsUnsub) { approvalsUnsub(); approvalsUnsub = null; }
+      document.getElementById('appWrap').style.display = 'none';
+      document.getElementById('pendingGate').style.display = 'none';
+      document.getElementById('loginGate').style.display = 'flex';
+      return;
+    }
+
+    if (isAdminEmail(user.email)) {
+      enterApp(user, true);
+      return;
+    }
+
+    // 관리자가 아니면, 본인의 승인 상태를 실시간으로 지켜봐요.
+    // (관리자가 승인 버튼을 누르는 순간 이 화면이 자동으로 앱으로 넘어가요)
+    unsubscribeOwnProfile = db.collection('users').doc(user.uid).onSnapshot(doc => {
+      const approved = doc.exists && doc.data().approved === true;
+      if (approved) {
+        enterApp(user, false);
+      } else {
+        document.getElementById('appWrap').style.display = 'none';
+        document.getElementById('loginGate').style.display = 'none';
+        document.getElementById('pendingGate').style.display = 'flex';
+        document.getElementById('pendingUserEmail').textContent = user.email;
+      }
+    }, () => {
+      // 문서를 읽을 권한이 없거나 아직 없으면 승인 대기 취급
+      document.getElementById('appWrap').style.display = 'none';
+      document.getElementById('loginGate').style.display = 'none';
+      document.getElementById('pendingGate').style.display = 'flex';
+      document.getElementById('pendingUserEmail').textContent = user.email;
+    });
+  });
+
+  function enterApp(user, admin) {
+    document.getElementById('pendingGate').style.display = 'none';
+    document.getElementById('loginGate').style.display = 'none';
+    document.getElementById('appWrap').style.display = '';
+    document.getElementById('currentUserEmail').textContent = user.email + (admin ? ' (관리자)' : '');
+    document.getElementById('approvalsTabBtn').style.display = admin ? '' : 'none';
+    initRealtimeListeners();
+    if (admin) initApprovalsListener();
+  }
+
+  let approvalsUnsub = null;
+  let pendingUsers = [];
+  function initApprovalsListener() {
+    if (approvalsUnsub) return;
+    approvalsUnsub = db.collection('users').onSnapshot(snap => {
+      pendingUsers = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => !u.approved);
+      const badge = document.getElementById('pendingCountBadge');
+      badge.innerHTML = pendingUsers.length ? '<span class="count-badge">' + pendingUsers.length + '</span>' : '';
+      renderApprovals();
+    }, err => showToast('가입 목록을 불러오지 못했어요: ' + err.message));
+  }
+  function renderApprovals() {
+    const area = document.getElementById('approvalsListArea');
+    if (!area) return;
+    if (!pendingUsers.length) { area.innerHTML = '<div class="empty">승인 대기 중인 가입 신청이 없어요.</div>'; return; }
+    let html = '<table><thead><tr><th>이메일</th><th>신청일시</th><th></th></tr></thead><tbody>';
+    pendingUsers.forEach(u => {
+      html += '<tr><td class="prod-name">' + escapeHtml(u.email) + '</td><td>' + fmtDate(u.createdAt) + '</td>' +
+        '<td class="row-actions"><button class="primary-btn" style="padding:6px 12px; font-size:12px;" data-approve="' + u.id + '">승인</button></td></tr>';
+    });
+    html += '</tbody></table>';
+    area.innerHTML = html;
+    area.querySelectorAll('[data-approve]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        await db.collection('users').doc(btn.dataset.approve).update({
+          approved: true, approvedAt: firebase.firestore.FieldValue.serverTimestamp(), approvedBy: auth.currentUser.email
+        });
+        showToast('승인했어요.');
+      });
+    });
+  }
 
   /* ============ 3단계: 실시간 데이터 ============ */
   // 로컬 캐시 (Firestore 실시간 구독으로 항상 최신 상태 유지)
