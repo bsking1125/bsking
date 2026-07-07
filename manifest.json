@@ -1,6 +1,6 @@
 {
-  "name": "공통창고 재고 관리",
-  "short_name": "재고관리",
+  "name": "최뚜비",
+  "short_name": "최뚜비",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
