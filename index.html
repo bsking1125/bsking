@@ -497,6 +497,13 @@ function startApp(fbConfig) {
     document.getElementById('appWrap').style.display = '';
     document.getElementById('currentUserEmail').textContent = user.email + (admin ? ' (관리자)' : '');
     document.getElementById('approvalsTabBtn').style.display = admin ? '' : 'none';
+    const fromInput = document.getElementById('outFilterFrom');
+    const toInput = document.getElementById('outFilterTo');
+    if (!fromInput.value && !toInput.value) {
+      const t = fmtDateOnly(new Date());
+      fromInput.value = t;
+      toInput.value = t;
+    }
     initRealtimeListeners();
     if (admin) initApprovalsListener();
   }
@@ -865,6 +872,13 @@ function startApp(fbConfig) {
     showToast('창고이동 완료 처리했어요.');
   }
 
+  async function removeOutbound(id) {
+    const o = outboundList.find(x => x.id === id);
+    if (!confirm('이 출고 건을 완전히 삭제할까요?\n\n' + (o ? o.partnerName + ' · ' + fmtDateOnly(o.createdAt) : '') + '\n삭제하면 되돌릴 수 없어요.')) return;
+    await db.collection('outbound').doc(id).delete();
+    showToast('출고 건을 삭제했어요.');
+  }
+
   async function unmarkTransferDone(id) {
     if (!confirm('이 건을 다시 "창고이동 대기중"으로 되돌릴까요?')) return;
     await db.collection('outbound').doc(id).update({
@@ -1116,6 +1130,7 @@ function startApp(fbConfig) {
         (o.status !== 'done'
           ? '<button data-mark-done="' + o.id + '" style="color:var(--primary-dark);">이동완료</button>'
           : '<button data-unmark-done="' + o.id + '" style="color:var(--red);">이동취소</button>') +
+        '<button data-remove-outbound="' + o.id + '" style="color:var(--red);">삭제</button>' +
         '</td></tr>';
     });
     html += '</tbody></table>';
@@ -1126,6 +1141,7 @@ function startApp(fbConfig) {
     }));
     area.querySelectorAll('[data-mark-done]').forEach(btn => btn.addEventListener('click', () => markTransferDone(btn.dataset.markDone)));
     area.querySelectorAll('[data-unmark-done]').forEach(btn => btn.addEventListener('click', () => unmarkTransferDone(btn.dataset.unmarkDone)));
+    area.querySelectorAll('[data-remove-outbound]').forEach(btn => btn.addEventListener('click', () => removeOutbound(btn.dataset.removeOutbound)));
     area.querySelectorAll('[data-edit-outbound]').forEach(btn => btn.addEventListener('click', () => {
       const o = outboundList.find(x => x.id === btn.dataset.editOutbound);
       if (o) loadOrderIntoRegisterForm(o);
