@@ -91,12 +91,20 @@
   .status-done { background: var(--primary-tint); color: var(--primary-dark); }
   .invoice-table { width:100%; border-collapse:collapse; font-size:13px; margin: 14px 0; }
   .invoice-table th, .invoice-table td { border:1px solid var(--line); padding:8px 10px; }
+  .doc-table { width:100%; border-collapse:collapse; font-size:12px; margin-bottom:6px; }
+  .doc-table td, .doc-table th { border:1px solid #444; padding:5px 7px; }
+  .doc-table th { background:#f0f0f0; font-weight:700; text-align:center; }
+  .doc-table td.num, .doc-table th.num { text-align:right; }
+  .doc-table .label { background:#f5f5f5; font-weight:600; white-space:nowrap; }
+  .doc-table .vert-label { background:#f5f5f5; font-weight:700; text-align:center; writing-mode:vertical-rl; text-orientation:upright; letter-spacing:3px; width:22px; }
+  .invoice-sheet h1 { text-align:center; font-size:20px; letter-spacing:6px; margin:0 0 2px; }
+  .invoice-sheet .sheet-date { text-align:center; font-size:12px; color:#555; margin-bottom:14px; }
   @media print {
     body * { visibility: hidden; }
     #invoiceModal, #invoiceModal * { visibility: visible; }
     #invoiceModal { position: absolute; top:0; left:0; background:#fff !important; display:flex !important; }
     #invoiceModal .center-box { box-shadow:none !important; border:none !important; max-width:100% !important; width:100%; }
-    #invoicePrintBtn, #invoiceCloseBtn { display:none !important; }
+    #invoicePrintBtn, #invoiceCloseBtn, #invoiceExcelBtn { display:none !important; }
   }
   .filter-bar button.active { background: var(--primary); color: #fff; border-color: var(--primary); }
 </style>
@@ -210,7 +218,7 @@
 
     <div class="table-scroll" style="margin-bottom:10px;">
       <table id="itemCartTable">
-        <thead><tr><th>품목명</th><th>규격</th><th class="num">단가</th><th class="num">수량</th><th class="num">금액</th><th>비고</th><th></th></tr></thead>
+        <thead><tr><th>품목명</th><th>규격</th><th class="num">수량</th><th class="num">단가</th><th class="num">금액</th><th>비고</th><th></th></tr></thead>
         <tbody id="itemCartBody"><tr><td colspan="7" class="empty">위에서 검색해서 품목을 담아주세요.</td></tr></tbody>
       </table>
     </div>
@@ -318,6 +326,7 @@
   <div class="center-box" style="max-width:820px; max-height:88vh; overflow-y:auto;">
     <div id="invoiceContent"></div>
     <div style="margin-top:18px; display:flex; gap:8px;">
+      <button class="ghost-btn" id="invoiceExcelBtn">엑셀 전환</button>
       <button class="primary-btn" id="invoicePrintBtn" style="flex:1;">인쇄하기</button>
       <button class="ghost-btn" id="invoiceCloseBtn">닫기</button>
     </div>
@@ -741,8 +750,8 @@ function startApp(fbConfig) {
       html += '<tr>' +
         '<td class="prod-name">' + escapeHtml(it.name) + '</td>' +
         '<td>' + escapeHtml(it.spec) + '</td>' +
-        '<td class="num"><input type="number" min="0" value="' + it.price + '" data-cart-price="' + idx + '" style="width:90px; text-align:right;"></td>' +
         '<td class="num"><input type="number" min="1" value="' + it.qty + '" data-cart-qty="' + idx + '" style="width:70px; text-align:right;"></td>' +
+        '<td class="num"><input type="number" min="0" value="' + it.price + '" data-cart-price="' + idx + '" style="width:90px; text-align:right;"></td>' +
         '<td class="num">' + fmtMoney(amount) + '</td>' +
         '<td><input type="text" value="' + escapeHtml(it.note) + '" data-cart-note="' + idx + '" style="width:90px;"></td>' +
         '<td class="row-actions"><button data-cart-remove="' + idx + '">삭제</button></td>' +
@@ -858,39 +867,131 @@ function startApp(fbConfig) {
   }
 
   /* ============ 거래명세표 ============ */
+  const MIN_INVOICE_ROWS = 8; // 원본 양식처럼 빈 줄도 어느 정도 채워서 보여줘요
   function showInvoice(order) {
+    lastShownOrder = order;
     const c = company || {};
+    const rows = Math.max(MIN_INVOICE_ROWS, (order.items || []).length);
     let itemsHtml = '';
-    (order.items || []).forEach((it, i) => {
-      itemsHtml += '<tr><td class="num">' + (i+1) + '</td><td>' + escapeHtml(it.name) + '</td><td>' + escapeHtml(it.spec||'') + '</td>' +
-        '<td class="num">' + fmtMoney(it.price) + '</td><td class="num">' + it.qty + '</td><td class="num">' + fmtMoney(it.amount) + '</td><td>' + escapeHtml(it.note||'') + '</td></tr>';
-    });
+    for (let i = 0; i < rows; i++) {
+      const it = (order.items || [])[i];
+      itemsHtml += '<tr><td class="num">' + (i+1) + '</td>' +
+        '<td>' + (it ? escapeHtml(it.name) : '') + '</td>' +
+        '<td>' + (it ? escapeHtml(it.spec||'') : '') + '</td>' +
+        '<td class="num">' + (it ? it.qty : '') + '</td>' +
+        '<td class="num">' + (it ? fmtMoney(it.price) : '') + '</td>' +
+        '<td class="num">' + (it ? fmtMoney(it.amount) : '') + '</td>' +
+        '<td>' + (it ? escapeHtml(it.note||'') : '') + '</td></tr>';
+    }
+    const totalQty = (order.items || []).reduce((s, it) => s + (it.qty||0), 0);
+
     const html =
-      '<h1 style="text-align:center; margin-bottom:2px;">거래명세표</h1>' +
-      '<div style="text-align:center; color:var(--ink-soft); font-size:12px; margin-bottom:16px;">' + fmtDateOnly(order.createdAt) + '</div>' +
-      '<table class="invoice-table"><tbody>' +
-      '<tr><th style="width:80px; background:var(--bg);">공급자</th>' +
-        '<td>등록번호 ' + escapeHtml(c.bizNo||'-') + ' · 상호 ' + escapeHtml(c.name||'(우리 회사 정보 미등록)') + ' · 대표자 ' + escapeHtml(c.ceo||'-') + '<br>' +
-        '<span style="color:var(--ink-soft); font-size:12px;">' + escapeHtml(c.address||'') + (c.phone ? ' · ' + escapeHtml(c.phone) : '') + '</span></td></tr>' +
-      '<tr><th style="background:var(--bg);">공급받는자</th>' +
-        '<td>등록번호 ' + escapeHtml(order.partnerBizNo||'-') + ' · 상호 ' + escapeHtml(order.partnerName) + ' · 대표자 ' + escapeHtml(order.partnerCeo||'-') + '<br>' +
-        '<span style="color:var(--ink-soft); font-size:12px;">' + escapeHtml(order.partnerAddress||'') + ' · 검수자 ' + escapeHtml(order.partnerContact||'-') + '</span></td></tr>' +
-      '</tbody></table>' +
-      '<table class="invoice-table"><thead><tr><th>No.</th><th>품목명</th><th>규격</th><th class="num">단가</th><th class="num">수량</th><th class="num">금액</th><th>비고</th></tr></thead>' +
+      '<div class="invoice-sheet">' +
+      '<h1>거래명세표</h1>' +
+      '<div class="sheet-date">' + fmtDateOnly(order.createdAt) + '</div>' +
+      '<table class="doc-table">' +
+        '<tr>' +
+          '<td class="vert-label" rowspan="5">공급자</td>' +
+          '<td class="label" style="width:70px;">등록번호</td><td colspan="3">' + escapeHtml(c.bizNo||'-') + '</td>' +
+          '<td class="vert-label" rowspan="5">공급받는자</td>' +
+          '<td class="label" style="width:70px;">등록번호</td><td colspan="3">' + escapeHtml(order.partnerBizNo||'-') + '</td>' +
+        '</tr>' +
+        '<tr><td class="label">상호</td><td colspan="3">' + escapeHtml(c.name||'(우리 회사 정보 미등록)') + '</td>' +
+             '<td class="label">상호</td><td colspan="3">' + escapeHtml(order.partnerName||'-') + '</td></tr>' +
+        '<tr><td class="label">대표자</td><td colspan="3">' + escapeHtml(c.ceo||'-') + '</td>' +
+             '<td class="label">대표자</td><td colspan="3">' + escapeHtml(order.partnerCeo||'-') + '</td></tr>' +
+        '<tr><td class="label">주소</td><td colspan="3">' + escapeHtml(c.address||'-') + '</td>' +
+             '<td class="label">주소</td><td colspan="3">' + escapeHtml(order.partnerAddress||'-') + '</td></tr>' +
+        '<tr><td class="label">연락처</td><td colspan="3">' + escapeHtml(c.phone||'-') + '</td>' +
+             '<td class="label">검수자</td><td colspan="3">' + escapeHtml(order.partnerContact||'-') + '</td></tr>' +
+      '</table>' +
+
+      '<table class="doc-table">' +
+      '<thead><tr><th style="width:34px;">No.</th><th>품목명</th><th style="width:70px;">규격</th><th class="num" style="width:56px;">수량</th><th class="num" style="width:80px;">단가</th><th class="num" style="width:90px;">금액</th><th style="width:70px;">비고</th></tr></thead>' +
       '<tbody>' + itemsHtml + '</tbody>' +
-      '<tfoot><tr><td colspan="5" style="text-align:right; font-weight:700;">합계</td><td class="num" style="font-weight:700;">' + fmtMoney(order.subtotal + order.vat) + '</td><td></td></tr></tfoot></table>' +
-      '<table class="invoice-table"><tbody>' +
-      '<tr><th style="width:80px; background:var(--bg);">공급가액</th><td class="num">' + fmtMoney(order.subtotal) + '원</td>' +
-      '<th style="width:60px; background:var(--bg);">부가세</th><td class="num">' + fmtMoney(order.vat) + '원</td>' +
-      '<th style="width:80px; background:var(--bg);">총공급액</th><td class="num" style="font-weight:700;">' + fmtMoney(order.total) + '원</td></tr>' +
-      '<tr><th style="background:var(--bg);">배송처</th><td colspan="3">' + escapeHtml(order.shipTo||'-') + '</td>' +
-      '<th style="background:var(--bg);">입고담당자</th><td>' + escapeHtml(order.receiver||'-') + (order.receiverPhone ? ' · ' + escapeHtml(order.receiverPhone) : '') + '</td></tr>' +
-      '<tr><th style="background:var(--bg);">배송지주소</th><td colspan="5">' + escapeHtml(order.shipAddress||'-') + '</td></tr>' +
-      (c.bankInfo ? '<tr><th style="background:var(--bg);">비고</th><td colspan="5">' + escapeHtml(c.bankInfo) + '</td></tr>' : '') +
-      '</tbody></table>';
+      '<tfoot><tr><td colspan="3" class="label" style="text-align:center;">합계</td><td class="num">' + totalQty + '</td><td></td><td class="num" style="font-weight:700;">' + fmtMoney(order.subtotal) + '</td><td></td></tr></tfoot>' +
+      '</table>' +
+
+      '<table class="doc-table">' +
+      '<tr><td class="label" style="width:70px;">공급가액</td><td class="num">' + fmtMoney(order.subtotal) + '원</td>' +
+           '<td class="label" style="width:60px;">부가세</td><td class="num">' + fmtMoney(order.vat) + '원</td>' +
+           '<td class="label" style="width:70px;">총공급액</td><td class="num" style="font-weight:700;" colspan="2">' + fmtMoney(order.total) + '원</td></tr>' +
+      '<tr><td class="label">배송처</td><td colspan="3">' + escapeHtml(order.shipTo||'-') + '</td>' +
+           '<td class="label">입고담당자</td><td colspan="2">' + escapeHtml(order.receiver||'-') + (order.receiverPhone ? ' · ' + escapeHtml(order.receiverPhone) : '') + '</td></tr>' +
+      '<tr><td class="label">배송지주소</td><td colspan="7">' + escapeHtml(order.shipAddress||'-') + '</td></tr>' +
+      (c.bankInfo ? '<tr><td class="label">비고</td><td colspan="7">' + escapeHtml(c.bankInfo) + '</td></tr>' : '') +
+      '</table>' +
+      '</div>';
     document.getElementById('invoiceContent').innerHTML = html;
     document.getElementById('invoiceModal').style.display = 'flex';
   }
+
+  let lastShownOrder = null;
+  const INVOICE_TEMPLATE_URL = './invoice-template.xlsx';
+  const INVOICE_MAX_ITEM_ROWS = 15; // 원본 양식에 마련된 품목 줄 수 (13~27행)
+
+  async function exportInvoiceToExcel(order) {
+    const c = company || {};
+    if ((order.items || []).length > INVOICE_MAX_ITEM_ROWS) {
+      showToast('엑셀 양식은 한 장에 품목 ' + INVOICE_MAX_ITEM_ROWS + '개까지만 들어가요. 초과분은 안 채워질 수 있어요.');
+    }
+    let resp;
+    try {
+      resp = await fetch(INVOICE_TEMPLATE_URL);
+      if (!resp.ok) throw new Error('template fetch failed');
+    } catch (e) {
+      showToast('엑셀 양식 파일(invoice-template.xlsx)을 찾지 못했어요. index.html과 같은 폴더에 올려주세요.');
+      return;
+    }
+    const buf = await resp.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array', cellStyles: true });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const set = (addr, val) => { if (!ws[addr]) ws[addr] = { t: 's', v: '' }; ws[addr].v = val; ws[addr].t = (typeof val === 'number') ? 'n' : 's'; };
+
+    set('A2', fmtDateOnly(order.createdAt));
+    // 공급자 (우리 회사)
+    set('D5', c.bizNo || '');
+    set('D6', c.name || '');
+    set('D7', c.ceo || '');
+    set('D8', c.address || '');
+    set('D9', c.phone || '');
+    // 공급받는자 (거래처)
+    set('J5', order.partnerBizNo || '');
+    set('J6', order.partnerName || '');
+    set('J7', order.partnerCeo || '');
+    set('J8', order.partnerAddress || '');
+
+    // 품목 (13~27행, 최대 15줄)
+    const items = (order.items || []).slice(0, INVOICE_MAX_ITEM_ROWS);
+    items.forEach((it, i) => {
+      const row = 13 + i;
+      set('B' + row, it.name);
+      set('E' + row, it.spec || '');
+      set('F' + row, it.qty);
+      set('H' + row, it.price);
+      set('J' + row, it.amount);
+      if (it.note) set('M' + row, it.note);
+    });
+
+    const totalQty = items.reduce((s, it) => s + (it.qty||0), 0);
+    set('F28', totalQty);
+    set('J28', order.subtotal);
+    set('A30', order.subtotal);
+    set('E30', order.vat);
+    set('K29', order.total);
+
+    set('C32', order.shipTo || '');
+    set('J32', (order.receiver || '') + (order.receiverPhone ? ' ' + order.receiverPhone : ''));
+    set('C33', order.shipAddress || '');
+    if (c.bankInfo) set('C34', c.bankInfo);
+
+    const fname = ('거래명세표_' + (order.partnerName||'') + '_' + fmtDateOnly(order.createdAt) + '.xlsx').replace(/[\\/:*?"<>|]/g, '');
+    XLSX.writeFile(wb, fname);
+  }
+  document.getElementById('invoiceExcelBtn').addEventListener('click', () => {
+    if (lastShownOrder) exportInvoiceToExcel(lastShownOrder);
+  });
+
   document.getElementById('invoiceCloseBtn').addEventListener('click', () => {
     document.getElementById('invoiceModal').style.display = 'none';
   });
