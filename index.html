@@ -11,6 +11,7 @@
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
   :root {
     --bg: #F6F7F3; --surface: #FFFFFF; --ink: #1F2A22; --ink-soft: #5B6459; --line: #DEE2D6;
@@ -763,10 +764,17 @@ function startApp(fbConfig) {
     body.querySelectorAll('[data-cart-note]').forEach(inp => inp.addEventListener('input', () => { cartItems[+inp.dataset.cartNote].note = inp.value; }));
     body.querySelectorAll('[data-cart-remove]').forEach(btn => btn.addEventListener('click', () => { cartItems.splice(+btn.dataset.cartRemove, 1); renderCart(); }));
 
-    const subtotal = cartItems.reduce((s, it) => s + (it.price||0) * (it.qty||0), 0);
-    const vat = Math.round(subtotal * 0.1);
+    // 원본 엑셀 양식 계산식을 그대로 따라요: 입력한 단가는 "부가세 포함" 금액이고,
+    // 공급가액/부가세는 그 합계를 1.1로 나눠서 거꾸로 계산해요.
+    const totals = computeTotals(cartItems);
     document.getElementById('cartTotalsArea').innerHTML =
-      '공급가액 ' + fmtMoney(subtotal) + '원 · 부가세 ' + fmtMoney(vat) + '원 · <b>총액 ' + fmtMoney(subtotal + vat) + '원</b>';
+      '총액 ' + fmtMoney(totals.total) + '원 <span style="color:var(--ink-soft);">(공급가액 ' + fmtMoney(totals.subtotal) + '원 · 부가세 ' + fmtMoney(totals.vat) + '원)</span>';
+  }
+  function computeTotals(items) {
+    const total = items.reduce((s, it) => s + (it.price||0) * (it.qty||0), 0);
+    const subtotal = Math.round(total / 1.1);
+    const vat = total - subtotal;
+    return { total, subtotal, vat };
   }
 
   let editingOutboundId = null;
@@ -810,8 +818,7 @@ function startApp(fbConfig) {
     if (!cartItems.length) { showToast('담긴 품목이 없어요.'); return; }
     if (cartItems.some(it => !it.qty || it.qty <= 0)) { showToast('수량은 1 이상이어야 해요.'); return; }
 
-    const subtotal = cartItems.reduce((s, it) => s + (it.price||0) * (it.qty||0), 0);
-    const vat = Math.round(subtotal * 0.1);
+    const totals = computeTotals(cartItems);
     const order = {
       partnerId, partnerName: p.name, partnerBizNo: p.bizNo || '', partnerCeo: p.ceo || '',
       partnerAddress: p.address || '', partnerContact: p.contact || '',
@@ -820,7 +827,7 @@ function startApp(fbConfig) {
       receiverPhone: document.getElementById('regReceiverPhoneInput').value.trim(),
       shipAddress: document.getElementById('regShipAddressInput').value.trim() || p.address || '',
       items: cartItems.map(it => ({ name: it.name, spec: it.spec, price: it.price, qty: it.qty, amount: it.price*it.qty, note: it.note })),
-      subtotal, vat, total: subtotal + vat
+      subtotal: totals.subtotal, vat: totals.vat, total: totals.total
     };
 
     if (editingOutboundId) {
@@ -909,7 +916,7 @@ function startApp(fbConfig) {
       '<table class="doc-table">' +
       '<thead><tr><th style="width:34px;">No.</th><th>품목명</th><th style="width:70px;">규격</th><th class="num" style="width:56px;">수량</th><th class="num" style="width:80px;">단가</th><th class="num" style="width:90px;">금액</th><th style="width:70px;">비고</th></tr></thead>' +
       '<tbody>' + itemsHtml + '</tbody>' +
-      '<tfoot><tr><td colspan="3" class="label" style="text-align:center;">합계</td><td class="num">' + totalQty + '</td><td></td><td class="num" style="font-weight:700;">' + fmtMoney(order.subtotal) + '</td><td></td></tr></tfoot>' +
+      '<tfoot><tr><td colspan="3" class="label" style="text-align:center;">합계</td><td class="num">' + totalQty + '</td><td></td><td class="num" style="font-weight:700;">' + fmtMoney(order.total) + '</td><td></td></tr></tfoot>' +
       '</table>' +
 
       '<table class="doc-table">' +
@@ -928,7 +935,34 @@ function startApp(fbConfig) {
 
   let lastShownOrder = null;
   const INVOICE_TEMPLATE_URL = './invoice-template.xlsx';
+  const INVOICE_SHEET_PATH = 'xl/worksheets/sheet1.xml';
   const INVOICE_MAX_ITEM_ROWS = 15; // 원본 양식에 마련된 품목 줄 수 (13~27행)
+  const dash = v => (v !== undefined && v !== null && String(v).trim() !== '') ? String(v) : '-';
+
+  function xmlEscape(s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&apos;');
+  }
+  // 원본 셀(<c r="ADDR" .../> 또는 <c r="ADDR" ...>...</c>)을 찾아서, 스타일(s=...)은 그대로 두고 값만 바꿔치기해요.
+  // 셀을 새로 만들지 않고 "원본에 있던 그 칸"만 건드리기 때문에 로고 이미지·테두리·병합 같은 나머지 서식은 전혀 손대지 않아요.
+  function patchCell(xml, addr, value, isNumber) {
+    let m = xml.match(new RegExp('<c r="' + addr + '"[^>]*/>'));
+    if (m) {
+      const attrs = m[0].slice(('<c r="' + addr + '"').length, -2).replace(/\s*t="[^"]*"/, '');
+      const repl = isNumber
+        ? '<c r="' + addr + '"' + attrs + '><v>' + value + '</v></c>'
+        : '<c r="' + addr + '"' + attrs + ' t="inlineStr"><is><t xml:space="preserve">' + xmlEscape(value) + '</t></is></c>';
+      return xml.slice(0, m.index) + repl + xml.slice(m.index + m[0].length);
+    }
+    m = xml.match(new RegExp('<c r="' + addr + '"([^>]*)>[\\s\\S]*?</c>'));
+    if (m) {
+      const attrs = m[1].replace(/\s*t="[^"]*"/, '');
+      const repl = isNumber
+        ? '<c r="' + addr + '"' + attrs + '><v>' + value + '</v></c>'
+        : '<c r="' + addr + '"' + attrs + ' t="inlineStr"><is><t xml:space="preserve">' + xmlEscape(value) + '</t></is></c>';
+      return xml.slice(0, m.index) + repl + xml.slice(m.index + m[0].length);
+    }
+    return xml; // 해당 칸을 원본에서 못 찾으면 안전하게 그대로 둬요
+  }
 
   async function exportInvoiceToExcel(order) {
     const c = company || {};
@@ -944,53 +978,51 @@ function startApp(fbConfig) {
       return;
     }
     const buf = await resp.arrayBuffer();
-    const wb = XLSX.read(buf, { type: 'array', cellStyles: true });
-    const ws = wb.Sheets[wb.SheetNames[0]];
-    const set = (addr, val) => { if (!ws[addr]) ws[addr] = { t: 's', v: '' }; ws[addr].v = val; ws[addr].t = (typeof val === 'number') ? 'n' : 's'; };
+    const zip = await JSZip.loadAsync(buf);
+    const file = zip.file(INVOICE_SHEET_PATH);
+    if (!file) { showToast('양식 파일 구조가 예상과 달라요 (시트 파일을 못 찾았어요).'); return; }
+    let xml = await file.async('string');
 
-    set('A2', fmtDateOnly(order.createdAt));
-    // 공급자 (우리 회사)
-    set('D5', c.bizNo || '');
-    set('D6', c.name || '');
-    set('D7', c.ceo || '');
-    set('D8', c.address || '');
-    set('D9', c.phone || '');
+    xml = patchCell(xml, 'A2', fmtDateOnly(order.createdAt), false);
+    // 공급자 (우리 회사) — 값이 비어있으면 "-"로 남겨둬요
+    xml = patchCell(xml, 'D5', dash(c.bizNo), false);
+    xml = patchCell(xml, 'D6', dash(c.name), false);
+    xml = patchCell(xml, 'D7', dash(c.ceo), false);
+    xml = patchCell(xml, 'D8', dash(c.address), false);
+    xml = patchCell(xml, 'D9', dash(c.phone), false);
     // 공급받는자 (거래처)
-    set('J5', order.partnerBizNo || '');
-    set('J6', order.partnerName || '');
-    set('J7', order.partnerCeo || '');
-    set('J8', order.partnerAddress || '');
+    xml = patchCell(xml, 'J5', dash(order.partnerBizNo), false);
+    xml = patchCell(xml, 'J6', dash(order.partnerName), false);
+    xml = patchCell(xml, 'J7', dash(order.partnerCeo), false);
+    xml = patchCell(xml, 'J8', dash(order.partnerAddress), false);
 
-    // 품목 (13~27행, 최대 15줄)
+    // 품목 (13~27행, 최대 15줄) — 합계/공급가액/부가세/총공급액 칸은 원본에 수식이 이미 걸려있어서
+    // 건드리지 않아요. 엑셀에서 파일을 열면 그 수식들이 알아서 자동으로 계산돼요.
     const items = (order.items || []).slice(0, INVOICE_MAX_ITEM_ROWS);
     items.forEach((it, i) => {
       const row = 13 + i;
-      set('B' + row, it.name);
-      set('E' + row, it.spec || '');
-      set('F' + row, it.qty);
-      set('H' + row, it.price);
-      set('J' + row, it.amount);
-      if (it.note) set('M' + row, it.note);
+      xml = patchCell(xml, 'B' + row, dash(it.name), false);
+      xml = patchCell(xml, 'E' + row, dash(it.spec), false);
+      xml = patchCell(xml, 'F' + row, it.qty || 0, true);
+      xml = patchCell(xml, 'H' + row, it.price || 0, true);
+      xml = patchCell(xml, 'J' + row, it.amount || 0, true);
+      xml = patchCell(xml, 'M' + row, it.note ? it.note : '-', false);
     });
 
-    const totalQty = items.reduce((s, it) => s + (it.qty||0), 0);
-    set('F28', totalQty);
-    set('J28', order.subtotal);
-    set('A30', order.subtotal);
-    set('E30', order.vat);
-    set('K29', order.total);
+    xml = patchCell(xml, 'C32', dash(order.shipTo), false);
+    xml = patchCell(xml, 'J32', dash(order.receiver), false);
+    xml = patchCell(xml, 'L32', dash(order.receiverPhone), false);
+    xml = patchCell(xml, 'C33', dash(order.shipAddress), false);
+    if (c.bankInfo) xml = patchCell(xml, 'C34', c.bankInfo, false);
 
-    set('C32', order.shipTo || '');
-    set('J32', (order.receiver || '') + (order.receiverPhone ? ' ' + order.receiverPhone : ''));
-    set('C33', order.shipAddress || '');
-    if (c.bankInfo) set('C34', c.bankInfo);
-
+    zip.file(INVOICE_SHEET_PATH, xml);
+    const outBlob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const fname = ('거래명세표_' + (order.partnerName||'') + '_' + fmtDateOnly(order.createdAt) + '.xlsx').replace(/[\\/:*?"<>|]/g, '');
-    // 행 높이 / 열 너비 / 병합 정보가 저장 과정에서 유실되지 않도록 원본 값을 다시 명시적으로 붙여줘요.
-    ws['!merges'] = ws['!merges'] || [];
-    if (ws['!rows']) ws['!rows'] = ws['!rows'];
-    if (ws['!cols']) ws['!cols'] = ws['!cols'];
-    XLSX.writeFile(wb, fname, { cellStyles: true });
+    const url = URL.createObjectURL(outBlob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fname;
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
   }
   document.getElementById('invoiceExcelBtn').addEventListener('click', () => {
     if (lastShownOrder) exportInvoiceToExcel(lastShownOrder);
