@@ -85,6 +85,19 @@
   .history-date { color: var(--ink-soft); font-family: var(--mono); font-size: 11px; }
   .history-qty { font-family: var(--mono); font-weight: 700; }
   .filter-bar { display: flex; gap: 6px; margin-bottom: 12px; }
+  .transfer-banner { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; background: var(--red-tint); border:1px solid var(--red); color: var(--red); border-radius: 10px; padding: 12px 16px; margin-bottom: 18px; font-size: 13px; font-weight:600; }
+  .status-pill { display:inline-block; font-size:11px; font-weight:700; padding:3px 9px; border-radius:10px; }
+  .status-pending { background: var(--red-tint); color: var(--red); }
+  .status-done { background: var(--primary-tint); color: var(--primary-dark); }
+  .invoice-table { width:100%; border-collapse:collapse; font-size:13px; margin: 14px 0; }
+  .invoice-table th, .invoice-table td { border:1px solid var(--line); padding:8px 10px; }
+  @media print {
+    body * { visibility: hidden; }
+    #invoiceModal, #invoiceModal * { visibility: visible; }
+    #invoiceModal { position: absolute; top:0; left:0; background:#fff !important; display:flex !important; }
+    #invoiceModal .center-box { box-shadow:none !important; border:none !important; max-width:100% !important; width:100%; }
+    #invoicePrintBtn, #invoiceCloseBtn { display:none !important; }
+  }
   .filter-bar button.active { background: var(--primary); color: #fff; border-color: var(--primary); }
 </style>
 </head>
@@ -139,7 +152,7 @@
   <div class="topbar">
     <div>
       <div class="title">충인농 창고지기</div>
-      <div class="subtitle" style="margin:2px 0 0;">창고별로 재고를 철저히 관리해요</div>
+      <div class="subtitle" style="margin:2px 0 0;">출고할 때마다 거래명세표를 만들고, 창고이동을 놓치지 않게 관리해요</div>
     </div>
     <div class="user-chip">
       <span id="currentUserEmail"></span>
@@ -147,13 +160,12 @@
     </div>
   </div>
 
+  <div id="pendingTransferBanner" style="display:none;"></div>
+
   <div class="tab-nav" id="tabNav">
-    <button class="tab-btn active" data-tab="stock">총 재고</button>
-    <button class="tab-btn" data-tab="warehouses">창고 관리</button>
-    <button class="tab-btn" data-tab="purchase">매입 (+)</button>
-    <button class="tab-btn" data-tab="sale">매출 (-)</button>
-    <button class="tab-btn" data-tab="move">창고 이동</button>
-    <button class="tab-btn" data-tab="history">처리 기록</button>
+    <button class="tab-btn active" data-tab="register">출고 등록</button>
+    <button class="tab-btn" data-tab="outbound-list">출고 내역</button>
+    <button class="tab-btn" data-tab="partners">거래처 관리</button>
     <button class="tab-btn" data-tab="approvals" id="approvalsTabBtn" style="display:none;">가입 승인<span id="pendingCountBadge"></span></button>
   </div>
 
@@ -165,100 +177,91 @@
     <div id="approvalsListArea"></div>
   </div>
 
-  <!-- 총 재고 -->
-  <div class="tab-panel" data-panel="stock">
+  <!-- 출고 등록 -->
+  <div class="tab-panel" data-panel="register">
     <div class="section-head">
-      <div><h2>총 재고</h2><div class="desc">상품별 · 창고별 재고. 모든 창고를 더한 값이 총 재고예요.</div></div>
-      <button class="ghost-btn" id="toggleAddProductBtn">+ 상품 추가</button>
-    </div>
-    <div id="addProductBox" style="display:none; margin-bottom:14px;">
-      <div class="add-row">
-        <input type="text" id="newProductNameInput" placeholder="상품명">
-        <button class="primary-btn" id="addProductBtn">추가</button>
-      </div>
-    </div>
-    <div class="table-scroll" id="stockTableArea"></div>
-  </div>
-
-  <!-- 창고 관리 -->
-  <div class="tab-panel" data-panel="warehouses" style="display:none;">
-    <div class="section-head">
-      <div><h2>창고 관리</h2><div class="desc">공통창고, 대리점, 통합매장 등 재고가 쌓이는 장소들을 등록해요.</div></div>
-    </div>
-    <div class="add-row" style="margin-bottom:16px;">
-      <input type="text" id="newWarehouseNameInput" placeholder="창고명 (예: 공통창고, 대리점1, 통합매장A)">
-      <button class="primary-btn" id="addWarehouseBtn">창고 추가</button>
-    </div>
-    <div id="warehouseListArea"></div>
-  </div>
-
-  <!-- 매입 -->
-  <div class="tab-panel" data-panel="purchase" style="display:none;">
-    <div class="section-head">
-      <div><h2>매입 등록 (+)</h2><div class="desc">특정 창고에 재고를 더해요. 신규 입고, 초기 재고 등록에 써요.</div></div>
-    </div>
-    <div class="card" style="margin-bottom:16px;">
-      <div class="add-row">
-        <select id="purchaseProductSelect"></select>
-        <select id="purchaseWarehouseSelect"></select>
-        <input type="number" class="qty" id="purchaseQtyInput" placeholder="수량" min="1">
-        <input type="text" id="purchaseMemoInput" placeholder="메모(선택)">
-        <button class="primary-btn" id="purchaseSubmitBtn">매입 등록</button>
-      </div>
-    </div>
-    <div class="section-head"><div><h2 style="font-size:14px;">일괄 입력</h2><div class="desc">엑셀에서 [상품명] [탭] [창고명] [탭] [수량] 세 칸을 복사해서 그대로 붙여넣으면 한 번에 등록돼요.</div></div></div>
-    <textarea id="purchaseBulkTextarea" rows="6" placeholder="황제침향원 60환&#9;공통창고&#9;100
-황제침향원 60환&#9;대리점1&#9;20"></textarea>
-    <div class="add-row" style="margin-top:8px;">
-      <button class="primary-btn" id="purchaseBulkBtn">일괄 매입 등록</button>
-    </div>
-  </div>
-
-  <!-- 매출 -->
-  <div class="tab-panel" data-panel="sale" style="display:none;">
-    <div class="section-head">
-      <div><h2>매출 처리 (-)</h2><div class="desc">특정 창고에서 재고를 차감해요.</div></div>
+      <div><h2>출고 등록</h2><div class="desc">제품명 · 가격 · 수량 · 공급처(거래처)를 입력하면 거래명세표를 바로 만들어줘요.</div></div>
     </div>
     <div class="card">
+      <div class="field"><label>제품명</label><input type="text" id="outProductInput" placeholder="예: 황제침향원 60환"></div>
       <div class="add-row">
-        <select id="saleProductSelect"></select>
-        <select id="saleWarehouseSelect"></select>
-        <input type="number" class="qty" id="saleQtyInput" placeholder="수량" min="1">
-        <input type="text" id="saleMemoInput" placeholder="메모(선택)">
-        <button class="danger-btn" id="saleSubmitBtn">매출 차감</button>
+        <div class="field" style="flex:1; min-width:120px;"><label>가격 (단가)</label><input type="number" id="outPriceInput" placeholder="원" min="0"></div>
+        <div class="field" style="flex:1; min-width:120px;"><label>수량</label><input type="number" id="outQtyInput" placeholder="수량" min="1"></div>
       </div>
+      <div class="field">
+        <label>공급처 (거래처)</label>
+        <select id="outPartnerSelect"></select>
+      </div>
+      <div class="desc" style="margin-bottom:10px;">목록에 없는 거래처면 "거래처 관리" 탭에서 먼저 등록해주세요.</div>
+      <button class="primary-btn" id="outRegisterBtn" style="width:100%;">출고 등록하고 거래명세표 만들기</button>
     </div>
   </div>
 
-  <!-- 창고 이동 -->
-  <div class="tab-panel" data-panel="move" style="display:none;">
+  <!-- 출고 내역 -->
+  <div class="tab-panel" data-panel="outbound-list" style="display:none;">
     <div class="section-head">
-      <div><h2>창고 이동</h2><div class="desc">공통창고 → 대리점처럼, 한 창고에서 다른 창고로 옮겨요. 출발 창고에서 빠지고 도착 창고에 동시에 더해져요 (총 재고는 그대로예요).</div></div>
+      <div><h2>출고 내역</h2><div class="desc">날짜 · 거래처 · 상태로 필터해서 볼 수 있어요.</div></div>
     </div>
-    <div class="card">
-      <div class="add-row">
-        <select id="moveProductSelect"></select>
-        <select id="moveFromSelect"></select>
-        <span style="color:var(--ink-soft); font-size:13px;">→</span>
-        <select id="moveToSelect"></select>
-        <input type="number" class="qty" id="moveQtyInput" placeholder="수량" min="1">
-        <button class="primary-btn" id="moveSubmitBtn">이동 처리</button>
+    <div class="add-row" style="margin-bottom:14px;">
+      <div class="field" style="flex:1; min-width:140px;"><label>시작일</label><input type="date" id="outFilterFrom"></div>
+      <div class="field" style="flex:1; min-width:140px;"><label>종료일</label><input type="date" id="outFilterTo"></div>
+      <div class="field" style="flex:1; min-width:160px;"><label>거래처</label><select id="outFilterPartner"><option value="">전체 거래처</option></select></div>
+      <div class="field" style="flex:1; min-width:140px;"><label>상태</label>
+        <select id="outFilterStatus">
+          <option value="">전체</option>
+          <option value="pending">창고이동 대기중</option>
+          <option value="done">창고이동 완료</option>
+        </select>
       </div>
     </div>
+    <div class="table-scroll" id="outboundListArea"></div>
   </div>
 
-  <!-- 처리 기록 -->
-  <div class="tab-panel" data-panel="history" style="display:none;">
+  <!-- 거래처 관리 -->
+  <div class="tab-panel" data-panel="partners" style="display:none;">
     <div class="section-head">
-      <div><h2>처리 기록</h2><div class="desc">누가 언제 어디서 얼마나 처리했는지 실시간으로 보여요.</div></div>
+      <div><h2>우리 회사 정보</h2><div class="desc">거래명세표 위쪽 "공급자" 칸에 표시돼요. 한 번만 등록해두면 돼요.</div></div>
     </div>
-    <div class="filter-bar">
-      <button class="ghost-btn history-filter-btn active" data-filter="all">전체</button>
-      <button class="ghost-btn history-filter-btn" data-filter="in">매입만</button>
-      <button class="ghost-btn history-filter-btn" data-filter="out">매출만</button>
-      <button class="ghost-btn history-filter-btn" data-filter="move">이동만</button>
+    <div class="card" style="margin-bottom:24px;">
+      <div class="add-row">
+        <div class="field" style="flex:1; min-width:160px;"><label>회사명</label><input type="text" id="companyNameInput"></div>
+        <div class="field" style="flex:1; min-width:160px;"><label>사업자번호</label><input type="text" id="companyBizNoInput"></div>
+      </div>
+      <div class="add-row">
+        <div class="field" style="flex:2; min-width:220px;"><label>주소</label><input type="text" id="companyAddressInput"></div>
+        <div class="field" style="flex:1; min-width:140px;"><label>연락처</label><input type="text" id="companyPhoneInput"></div>
+      </div>
+      <button class="primary-btn" id="saveCompanyBtn">저장</button>
     </div>
-    <div id="historyArea"></div>
+
+    <div class="section-head">
+      <div><h2>거래처 등록</h2><div class="desc">출고 등록할 때 여기서 고른 거래처가 거래명세표의 "공급받는자"가 돼요.</div></div>
+    </div>
+    <div class="card" style="margin-bottom:20px;">
+      <div class="add-row">
+        <div class="field" style="flex:1; min-width:160px;"><label>거래처명 *</label><input type="text" id="partnerNameInput"></div>
+        <div class="field" style="flex:1; min-width:160px;"><label>사업자번호</label><input type="text" id="partnerBizNoInput"></div>
+      </div>
+      <div class="add-row">
+        <div class="field" style="flex:2; min-width:220px;"><label>주소</label><input type="text" id="partnerAddressInput"></div>
+        <div class="field" style="flex:1; min-width:140px;"><label>담당자</label><input type="text" id="partnerContactInput"></div>
+        <div class="field" style="flex:1; min-width:140px;"><label>연락처</label><input type="text" id="partnerPhoneInput"></div>
+      </div>
+      <button class="primary-btn" id="addPartnerBtn">거래처 추가</button>
+    </div>
+    <div id="partnerListArea"></div>
+  </div>
+
+</div>
+
+<!-- 거래명세표 보기/인쇄 -->
+<div id="invoiceModal" class="center-screen" style="display:none;">
+  <div class="center-box" style="max-width:560px;">
+    <div id="invoiceContent"></div>
+    <div style="margin-top:18px; display:flex; gap:8px;">
+      <button class="primary-btn" id="invoicePrintBtn" style="flex:1;">인쇄하기</button>
+      <button class="ghost-btn" id="invoiceCloseBtn">닫기</button>
+    </div>
   </div>
 </div>
 
@@ -462,20 +465,18 @@ function startApp(fbConfig) {
   }
 
   /* ============ 3단계: 실시간 데이터 ============ */
-  // 로컬 캐시 (Firestore 실시간 구독으로 항상 최신 상태 유지)
-  let warehouses = []; // [{id, name, order}]
-  let products = [];   // [{id, name, order}]
-  let stocks = {};      // { [productId]: { [warehouseId]: qty } }
-  let historyEntries = [];
+  let partners = [];      // [{id, name, bizNo, address, contact, phone, order}]
+  let outboundList = [];  // [{id, productName, price, qty, amount, partnerId, partnerName, status, createdAt, createdBy}]
+  let company = null;     // 우리 회사 정보 (공급자)
 
-  function orderedWarehouses() { return [...warehouses].sort((a,b) => (a.order||0) - (b.order||0)); }
-  function orderedProducts() { return [...products].sort((a,b) => (a.order||0) - (b.order||0)); }
-  function whName(id) { const w = warehouses.find(w => w.id === id); return w ? w.name : '(삭제된 창고)'; }
-  function prodName(id) { const p = products.find(p => p.id === id); return p ? p.name : '(삭제된 상품)'; }
-  function stockOf(productId, warehouseId) { return (stocks[productId] && stocks[productId][warehouseId]) || 0; }
-  function totalOf(productId) {
-    const row = stocks[productId] || {};
-    return Object.values(row).reduce((a,b) => a+b, 0);
+  function orderedPartners() { return [...partners].sort((a,b) => (a.order||0) - (b.order||0)); }
+  function partnerName(id) { const p = partners.find(p => p.id === id); return p ? p.name : '(삭제된 거래처)'; }
+  function fmtMoney(n) { return (n || 0).toLocaleString('ko-KR'); }
+  function fmtDateOnly(ts) {
+    if (!ts) return '';
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    const p = n => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate());
   }
 
   let listenersStarted = false;
@@ -483,325 +484,222 @@ function startApp(fbConfig) {
     if (listenersStarted) return;
     listenersStarted = true;
 
-    db.collection('warehouses').onSnapshot(snap => {
-      warehouses = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    db.collection('partners').onSnapshot(snap => {
+      partners = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       renderAll();
-    }, err => showToast('창고 정보를 불러오지 못했어요: ' + err.message));
+    }, err => showToast('거래처 정보를 불러오지 못했어요: ' + err.message));
 
-    db.collection('products').onSnapshot(snap => {
-      products = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    db.collection('outbound').orderBy('createdAt', 'desc').limit(500).onSnapshot(snap => {
+      outboundList = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       renderAll();
-    }, err => showToast('상품 정보를 불러오지 못했어요: ' + err.message));
+    }, err => showToast('출고 내역을 불러오지 못했어요: ' + err.message));
 
-    db.collection('stocks').onSnapshot(snap => {
-      const next = {};
-      snap.docs.forEach(d => {
-        const v = d.data();
-        if (!next[v.productId]) next[v.productId] = {};
-        next[v.productId][v.warehouseId] = v.qty || 0;
-      });
-      stocks = next;
-      renderAll();
-    }, err => showToast('재고 정보를 불러오지 못했어요: ' + err.message));
-
-    db.collection('transactions').orderBy('createdAt', 'desc').limit(300).onSnapshot(snap => {
-      historyEntries = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-      renderHistory();
-    }, err => showToast('처리 기록을 불러오지 못했어요: ' + err.message));
+    db.collection('settings').doc('company').onSnapshot(doc => {
+      company = doc.exists ? doc.data() : null;
+      if (company) {
+        document.getElementById('companyNameInput').value = company.name || '';
+        document.getElementById('companyBizNoInput').value = company.bizNo || '';
+        document.getElementById('companyAddressInput').value = company.address || '';
+        document.getElementById('companyPhoneInput').value = company.phone || '';
+      }
+    }, err => showToast('회사 정보를 불러오지 못했어요: ' + err.message));
   }
 
-  /* ============ 상품 / 창고 등록 ============ */
+  /* ============ 거래처 등록 / 관리 ============ */
   function nextOrder(list) { return list.reduce((m, x) => Math.max(m, x.order || 0), 0) + 1; }
 
-  document.getElementById('toggleAddProductBtn').addEventListener('click', () => {
-    const box = document.getElementById('addProductBox');
-    box.style.display = box.style.display === 'none' ? 'block' : 'none';
-  });
-  document.getElementById('addProductBtn').addEventListener('click', async () => {
-    const input = document.getElementById('newProductNameInput');
-    const name = input.value.trim();
-    if (!name) { showToast('상품명을 입력해주세요.'); return; }
-    if (products.some(p => p.name === name)) { showToast('이미 있는 상품명이에요.'); return; }
-    await db.collection('products').add({ name, order: nextOrder(products), createdAt: firebase.firestore.FieldValue.serverTimestamp() });
-    input.value = '';
-    showToast('"' + name + '" 상품을 추가했어요.');
-  });
-
-  document.getElementById('addWarehouseBtn').addEventListener('click', async () => {
-    const input = document.getElementById('newWarehouseNameInput');
-    const name = input.value.trim();
-    if (!name) { showToast('창고명을 입력해주세요.'); return; }
-    if (warehouses.some(w => w.name === name)) { showToast('이미 있는 창고명이에요.'); return; }
-    await db.collection('warehouses').add({ name, order: nextOrder(warehouses), createdAt: firebase.firestore.FieldValue.serverTimestamp() });
-    input.value = '';
-    showToast('"' + name + '" 창고를 추가했어요.');
-  });
-
-  async function removeWarehouse(id) {
-    const name = whName(id);
-    const totalQty = products.reduce((sum, p) => sum + stockOf(p.id, id), 0);
-    const msg = totalQty > 0
-      ? '"' + name + '" 창고를 삭제할까요?\n\n이 창고에 남아있는 재고 총 ' + totalQty + '개는 모두 0으로 차감 처리되고, 처리 기록에 남아요.'
-      : '"' + name + '" 창고를 삭제할까요? (처리 기록은 남아요)';
-    if (!confirm(msg)) return;
-    const batch = db.batch();
-    for (const p of products) {
-      const qty = stockOf(p.id, id);
-      const stockRef = db.collection('stocks').doc(p.id + '__' + id);
-      batch.delete(stockRef);
-      if (qty > 0) {
-        const txRef = db.collection('transactions').doc();
-        batch.set(txRef, {
-          type: 'out', productId: p.id, productName: p.name, warehouseId: id, warehouseName: name,
-          qty, memo: '창고 삭제로 인한 자동 차감', createdBy: auth.currentUser.email,
-          createdAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
-      }
-    }
-    batch.delete(db.collection('warehouses').doc(id));
-    await batch.commit();
-    showToast('"' + name + '" 창고를 삭제했어요.');
-  }
-
-  async function removeProduct(id) {
-    const name = prodName(id);
-    if (!confirm('"' + name + '" 상품을 삭제할까요? 재고가 있으면 모두 0으로 차감 처리돼요.')) return;
-    const batch = db.batch();
-    for (const w of warehouses) {
-      const qty = stockOf(id, w.id);
-      const stockRef = db.collection('stocks').doc(id + '__' + w.id);
-      batch.delete(stockRef);
-      if (qty > 0) {
-        const txRef = db.collection('transactions').doc();
-        batch.set(txRef, {
-          type: 'out', productId: id, productName: name, warehouseId: w.id, warehouseName: w.name,
-          qty, memo: '상품 삭제로 인한 자동 차감', createdBy: auth.currentUser.email,
-          createdAt: firebase.firestore.FieldValue.serverTimestamp()
-        });
-      }
-    }
-    batch.delete(db.collection('products').doc(id));
-    await batch.commit();
-    showToast('"' + name + '" 상품을 삭제했어요.');
-  }
-
-  async function reorder(collectionName, list, id, direction) {
-    const sorted = [...list].sort((a,b) => (a.order||0) - (b.order||0));
-    const idx = sorted.findIndex(x => x.id === id);
-    const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
-    if (idx === -1 || targetIdx < 0 || targetIdx >= sorted.length) return;
-    const a = sorted[idx], b = sorted[targetIdx];
-    const batch = db.batch();
-    batch.update(db.collection(collectionName).doc(a.id), { order: b.order });
-    batch.update(db.collection(collectionName).doc(b.id), { order: a.order });
-    await batch.commit();
-  }
-
-  /* ============ 매입 / 매출 / 이동 (재고 증감의 핵심) ============ */
-  // FieldValue.increment를 써서, 여러 사람이 동시에 처리해도 수량이 서로 덮어쓰지 않고
-  // 안전하게 더해지고 빠지게 만들었어요 (동시 편집 충돌 문제 방지).
-  async function adjustStock(productId, warehouseId, delta) {
-    const ref = db.collection('stocks').doc(productId + '__' + warehouseId);
-    await ref.set({
-      productId, warehouseId, qty: firebase.firestore.FieldValue.increment(delta)
-    }, { merge: true });
-  }
-  async function logTransaction(entry) {
-    await db.collection('transactions').add({
-      ...entry, createdBy: auth.currentUser.email, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  document.getElementById('saveCompanyBtn').addEventListener('click', async () => {
+    const name = document.getElementById('companyNameInput').value.trim();
+    if (!name) { showToast('회사명을 입력해주세요.'); return; }
+    await db.collection('settings').doc('company').set({
+      name,
+      bizNo: document.getElementById('companyBizNoInput').value.trim(),
+      address: document.getElementById('companyAddressInput').value.trim(),
+      phone: document.getElementById('companyPhoneInput').value.trim()
     });
-  }
-
-  function fillSelect(selectEl, list, placeholder) {
-    selectEl.innerHTML = (placeholder ? '<option value="">' + placeholder + '</option>' : '') +
-      list.map(x => '<option value="' + x.id + '">' + escapeHtml(x.name) + '</option>').join('');
-  }
-  function refreshFormSelects() {
-    const p = orderedProducts(), w = orderedWarehouses();
-    fillSelect(document.getElementById('purchaseProductSelect'), p, '상품 선택');
-    fillSelect(document.getElementById('purchaseWarehouseSelect'), w, '창고 선택');
-    fillSelect(document.getElementById('saleProductSelect'), p, '상품 선택');
-    fillSelect(document.getElementById('saleWarehouseSelect'), w, '창고 선택');
-    fillSelect(document.getElementById('moveProductSelect'), p, '상품 선택');
-    fillSelect(document.getElementById('moveFromSelect'), w, '출발 창고');
-    fillSelect(document.getElementById('moveToSelect'), w, '도착 창고');
-  }
-
-  document.getElementById('purchaseSubmitBtn').addEventListener('click', async () => {
-    const productId = document.getElementById('purchaseProductSelect').value;
-    const warehouseId = document.getElementById('purchaseWarehouseSelect').value;
-    const qty = Math.round(Number(document.getElementById('purchaseQtyInput').value));
-    const memo = document.getElementById('purchaseMemoInput').value.trim();
-    if (!productId || !warehouseId || !qty || qty <= 0) { showToast('상품 · 창고 · 수량(1개 이상)을 확인해주세요.'); return; }
-    await adjustStock(productId, warehouseId, qty);
-    await logTransaction({ type: 'in', productId, productName: prodName(productId), warehouseId, warehouseName: whName(warehouseId), qty, memo });
-    document.getElementById('purchaseQtyInput').value = '';
-    document.getElementById('purchaseMemoInput').value = '';
-    showToast('매입 등록: ' + prodName(productId) + ' · ' + whName(warehouseId) + ' +' + qty + '개');
+    showToast('우리 회사 정보를 저장했어요.');
   });
 
-  document.getElementById('purchaseBulkBtn').addEventListener('click', async () => {
-    const text = document.getElementById('purchaseBulkTextarea').value;
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean);
-    if (!lines.length) { showToast('붙여넣을 내용이 없어요.'); return; }
-    let okCount = 0, failLines = [];
-    for (const line of lines) {
-      const parts = line.split('\t').map(s => s.trim());
-      if (parts.length < 3) { failLines.push(line); continue; }
-      const [name, whNameStr, qtyStr] = parts;
-      const qty = Math.round(Number(qtyStr));
-      const product = products.find(p => p.name === name);
-      const warehouse = warehouses.find(w => w.name === whNameStr);
-      if (!product || !warehouse || !qty || qty <= 0) { failLines.push(line); continue; }
-      await adjustStock(product.id, warehouse.id, qty);
-      await logTransaction({ type: 'in', productId: product.id, productName: product.name, warehouseId: warehouse.id, warehouseName: warehouse.name, qty, memo: '일괄 입력' });
-      okCount++;
-    }
-    if (failLines.length) {
-      showToast(okCount + '건 등록, ' + failLines.length + '건은 실패했어요 (상품명/창고명이 등록돼있는지 확인해주세요).');
-    } else {
-      showToast(okCount + '건 모두 등록했어요.');
-      document.getElementById('purchaseBulkTextarea').value = '';
-    }
-  });
-
-  document.getElementById('saleSubmitBtn').addEventListener('click', async () => {
-    const productId = document.getElementById('saleProductSelect').value;
-    const warehouseId = document.getElementById('saleWarehouseSelect').value;
-    const qty = Math.round(Number(document.getElementById('saleQtyInput').value));
-    const memo = document.getElementById('saleMemoInput').value.trim();
-    if (!productId || !warehouseId || !qty || qty <= 0) { showToast('상품 · 창고 · 수량(1개 이상)을 확인해주세요.'); return; }
-    const current = stockOf(productId, warehouseId);
-    if (qty > current) {
-      if (!confirm(whName(warehouseId) + '의 현재 재고(' + current + '개)보다 많아요. 그래도 진행할까요? (재고가 마이너스가 돼요)')) return;
-    }
-    await adjustStock(productId, warehouseId, -qty);
-    await logTransaction({ type: 'out', productId, productName: prodName(productId), warehouseId, warehouseName: whName(warehouseId), qty, memo });
-    document.getElementById('saleQtyInput').value = '';
-    document.getElementById('saleMemoInput').value = '';
-    showToast('매출 처리: ' + prodName(productId) + ' · ' + whName(warehouseId) + ' -' + qty + '개');
-  });
-
-  document.getElementById('moveSubmitBtn').addEventListener('click', async () => {
-    const productId = document.getElementById('moveProductSelect').value;
-    const fromId = document.getElementById('moveFromSelect').value;
-    const toId = document.getElementById('moveToSelect').value;
-    const qty = Math.round(Number(document.getElementById('moveQtyInput').value));
-    if (!productId || !fromId || !toId || !qty || qty <= 0) { showToast('상품 · 출발/도착 창고 · 수량(1개 이상)을 확인해주세요.'); return; }
-    if (fromId === toId) { showToast('출발 창고와 도착 창고가 같아요.'); return; }
-    const current = stockOf(productId, fromId);
-    if (qty > current) {
-      if (!confirm(whName(fromId) + '의 현재 재고(' + current + '개)보다 많아요. 그래도 진행할까요?')) return;
-    }
-    const batch = db.batch();
-    batch.set(db.collection('stocks').doc(productId + '__' + fromId), { productId, warehouseId: fromId, qty: firebase.firestore.FieldValue.increment(-qty) }, { merge: true });
-    batch.set(db.collection('stocks').doc(productId + '__' + toId), { productId, warehouseId: toId, qty: firebase.firestore.FieldValue.increment(qty) }, { merge: true });
-    const txRef = db.collection('transactions').doc();
-    batch.set(txRef, {
-      type: 'move', productId, productName: prodName(productId),
-      warehouseId: fromId, warehouseName: whName(fromId),
-      toWarehouseId: toId, toWarehouseName: whName(toId),
-      qty, createdBy: auth.currentUser.email, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  document.getElementById('addPartnerBtn').addEventListener('click', async () => {
+    const name = document.getElementById('partnerNameInput').value.trim();
+    if (!name) { showToast('거래처명을 입력해주세요.'); return; }
+    await db.collection('partners').add({
+      name,
+      bizNo: document.getElementById('partnerBizNoInput').value.trim(),
+      address: document.getElementById('partnerAddressInput').value.trim(),
+      contact: document.getElementById('partnerContactInput').value.trim(),
+      phone: document.getElementById('partnerPhoneInput').value.trim(),
+      order: nextOrder(partners),
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
-    await batch.commit();
-    document.getElementById('moveQtyInput').value = '';
-    showToast('창고 이동: ' + prodName(productId) + ' · ' + whName(fromId) + ' → ' + whName(toId) + ' ' + qty + '개');
+    ['partnerNameInput','partnerBizNoInput','partnerAddressInput','partnerContactInput','partnerPhoneInput'].forEach(id => document.getElementById(id).value = '');
+    showToast('"' + name + '" 거래처를 등록했어요.');
   });
+
+  async function editPartner(id) {
+    const p = partners.find(p => p.id === id);
+    if (!p) return;
+    const name = prompt('거래처명', p.name);
+    if (name === null) return;
+    const bizNo = prompt('사업자번호', p.bizNo || '');
+    if (bizNo === null) return;
+    const address = prompt('주소', p.address || '');
+    if (address === null) return;
+    const contact = prompt('담당자', p.contact || '');
+    if (contact === null) return;
+    const phone = prompt('연락처', p.phone || '');
+    if (phone === null) return;
+    await db.collection('partners').doc(id).update({ name: name.trim() || p.name, bizNo, address, contact, phone });
+    showToast('거래처 정보를 수정했어요.');
+  }
+
+  async function removePartner(id) {
+    const name = partnerName(id);
+    if (!confirm('"' + name + '" 거래처를 삭제할까요? (이미 등록된 출고 내역은 그대로 남아요)')) return;
+    await db.collection('partners').doc(id).delete();
+    showToast('"' + name + '" 거래처를 삭제했어요.');
+  }
+
+  /* ============ 출고 등록 ============ */
+  function refreshPartnerSelects() {
+    const list = orderedPartners();
+    const opts = '<option value="">거래처 선택</option>' + list.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
+    document.getElementById('outPartnerSelect').innerHTML = opts;
+    document.getElementById('outFilterPartner').innerHTML = '<option value="">전체 거래처</option>' + list.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
+  }
+
+  document.getElementById('outRegisterBtn').addEventListener('click', async () => {
+    const productName = document.getElementById('outProductInput').value.trim();
+    const price = Math.round(Number(document.getElementById('outPriceInput').value));
+    const qty = Math.round(Number(document.getElementById('outQtyInput').value));
+    const partnerId = document.getElementById('outPartnerSelect').value;
+    if (!productName || !price || price < 0 || !qty || qty <= 0 || !partnerId) {
+      showToast('제품명 · 가격 · 수량 · 거래처를 모두 입력해주세요.');
+      return;
+    }
+    const pName = partnerName(partnerId);
+    const amount = price * qty;
+    const docRef = await db.collection('outbound').add({
+      productName, price, qty, amount, partnerId, partnerName: pName,
+      status: 'pending',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdBy: auth.currentUser.email
+    });
+    document.getElementById('outProductInput').value = '';
+    document.getElementById('outPriceInput').value = '';
+    document.getElementById('outQtyInput').value = '';
+    showToast('출고 등록 완료. 거래명세표를 보여드릴게요.');
+    showInvoice({ id: docRef.id, productName, price, qty, amount, partnerName: pName, createdAt: new Date() });
+  });
+
+  async function markTransferDone(id) {
+    if (!confirm('창고이동을 완료하셨나요? 완료로 표시하면 알림 목록에서 사라져요.')) return;
+    await db.collection('outbound').doc(id).update({
+      status: 'done', completedAt: firebase.firestore.FieldValue.serverTimestamp(), completedBy: auth.currentUser.email
+    });
+    showToast('창고이동 완료 처리했어요.');
+  }
+
+  /* ============ 거래명세표 ============ */
+  function showInvoice(order) {
+    const c = company || {};
+    const html =
+      '<h1 style="text-align:center; margin-bottom:2px;">거래명세표</h1>' +
+      '<div style="text-align:center; color:var(--ink-soft); font-size:12px; margin-bottom:16px;">' + fmtDateOnly(order.createdAt) + '</div>' +
+      '<table class="invoice-table"><tbody>' +
+      '<tr><th style="width:90px; background:var(--bg);">공급자</th><td>' + escapeHtml(c.name || '(우리 회사 정보 미등록)') + (c.bizNo ? ' · ' + escapeHtml(c.bizNo) : '') + '<br><span style="color:var(--ink-soft); font-size:12px;">' + escapeHtml(c.address || '') + (c.phone ? ' · ' + escapeHtml(c.phone) : '') + '</span></td></tr>' +
+      '<tr><th style="background:var(--bg);">공급받는자</th><td>' + escapeHtml(order.partnerName) + '</td></tr>' +
+      '</tbody></table>' +
+      '<table class="invoice-table"><thead><tr><th>품목</th><th class="num">단가</th><th class="num">수량</th><th class="num">금액</th></tr></thead><tbody>' +
+      '<tr><td>' + escapeHtml(order.productName) + '</td><td class="num">' + fmtMoney(order.price) + '원</td><td class="num">' + order.qty + '</td><td class="num">' + fmtMoney(order.amount) + '원</td></tr>' +
+      '</tbody><tfoot><tr><td colspan="3" style="text-align:right; font-weight:700;">합계</td><td class="num" style="font-weight:700;">' + fmtMoney(order.amount) + '원</td></tr></tfoot></table>';
+    document.getElementById('invoiceContent').innerHTML = html;
+    document.getElementById('invoiceModal').style.display = 'flex';
+  }
+  document.getElementById('invoiceCloseBtn').addEventListener('click', () => {
+    document.getElementById('invoiceModal').style.display = 'none';
+  });
+  document.getElementById('invoicePrintBtn').addEventListener('click', () => window.print());
 
   /* ============ 렌더링 ============ */
-  function renderStockTable() {
-    const area = document.getElementById('stockTableArea');
-    const p = orderedProducts(), w = orderedWarehouses();
-    if (!p.length) { area.innerHTML = '<div class="empty">아직 등록된 상품이 없어요. "+ 상품 추가"로 시작해보세요.</div>'; return; }
-    if (!w.length) { area.innerHTML = '<div class="empty">아직 등록된 창고가 없어요. "창고 관리" 탭에서 먼저 창고를 추가해주세요.</div>'; return; }
-    let html = '<table><thead><tr><th>상품명</th><th class="num">합계</th>';
-    w.forEach(wh => {
-      html += '<th class="num wh-header">' +
-        '<div style="display:flex; align-items:center; justify-content:flex-end; gap:2px;">' +
-        '<span class="arrow-btn" data-wh-move="up" data-wh="' + wh.id + '">◀</span>' +
-        '<span>' + escapeHtml(wh.name) + '</span>' +
-        '<span class="arrow-btn" data-wh-move="down" data-wh="' + wh.id + '">▶</span>' +
-        '</div></th>';
+  function renderPendingBanner() {
+    const pending = outboundList.filter(o => o.status !== 'done');
+    const banner = document.getElementById('pendingTransferBanner');
+    if (!pending.length) { banner.style.display = 'none'; banner.innerHTML = ''; return; }
+    banner.style.display = 'flex';
+    banner.innerHTML =
+      '<span>⚠ 아직 창고이동을 안 한 출고가 ' + pending.length + '건 있어요.</span>' +
+      '<button class="ghost-btn" id="jumpToPendingBtn" style="border-color:var(--red); color:var(--red);">지금 확인하기</button>';
+    document.getElementById('jumpToPendingBtn').addEventListener('click', () => {
+      document.getElementById('outFilterStatus').value = 'pending';
+      document.querySelector('.tab-btn[data-tab="outbound-list"]').click();
+      renderOutboundList();
     });
-    html += '<th></th></tr></thead><tbody>';
-    let grand = 0;
-    p.forEach(prod => {
-      const rowTotal = totalOf(prod.id);
-      grand += rowTotal;
-      html += '<tr><td class="prod-name">' + escapeHtml(prod.name) + '</td><td class="num">' + rowTotal + '</td>';
-      w.forEach(wh => {
-        const v = stockOf(prod.id, wh.id);
-        html += '<td class="num">' + (v || '-') + '</td>';
-      });
-      html += '<td class="row-actions"><button data-remove-product="' + prod.id + '">삭제</button></td></tr>';
-    });
-    html += '</tbody><tfoot><tr><td>합계</td><td class="num">' + grand + '</td>';
-    w.forEach(wh => {
-      const colTotal = p.reduce((s, prod) => s + stockOf(prod.id, wh.id), 0);
-      html += '<td class="num">' + colTotal + '</td>';
-    });
-    html += '<td></td></tr></tfoot></table>';
-    area.innerHTML = html;
-    area.querySelectorAll('[data-remove-product]').forEach(btn => btn.addEventListener('click', () => removeProduct(btn.dataset.removeProduct)));
-    area.querySelectorAll('[data-wh-move]').forEach(btn => btn.addEventListener('click', e => {
-      e.stopPropagation();
-      reorder('warehouses', warehouses, btn.dataset.wh, btn.dataset.whMove);
-    }));
   }
 
-  function renderWarehouseList() {
-    const area = document.getElementById('warehouseListArea');
-    const w = orderedWarehouses();
-    if (!w.length) { area.innerHTML = '<div class="empty">아직 등록된 창고가 없어요.</div>'; return; }
-    let html = '<table><thead><tr><th style="width:52px;">순번</th><th>창고명</th><th class="num">현재 총 재고</th><th></th></tr></thead><tbody>';
-    w.forEach((wh, idx) => {
-      const total = products.reduce((s, p) => s + stockOf(p.id, wh.id), 0);
-      html += '<tr><td class="num" style="color:var(--ink-soft);">' +
-        '<span class="arrow-btn" data-wh-move-v="up" data-wh="' + wh.id + '" style="opacity:1; width:auto;">▲</span> ' +
-        (idx+1) + ' <span class="arrow-btn" data-wh-move-v="down" data-wh="' + wh.id + '" style="opacity:1; width:auto;">▼</span>' +
-        '</td><td class="prod-name">' + escapeHtml(wh.name) + '</td><td class="num">' + total + '</td>' +
-        '<td class="row-actions"><button data-remove-wh="' + wh.id + '">삭제</button></td></tr>';
+  function renderPartnerList() {
+    const area = document.getElementById('partnerListArea');
+    const list = orderedPartners();
+    if (!list.length) { area.innerHTML = '<div class="empty">아직 등록된 거래처가 없어요.</div>'; return; }
+    let html = '<table><thead><tr><th>거래처명</th><th>사업자번호</th><th>주소</th><th>담당자</th><th>연락처</th><th></th></tr></thead><tbody>';
+    list.forEach(p => {
+      html += '<tr><td class="prod-name">' + escapeHtml(p.name) + '</td><td>' + escapeHtml(p.bizNo||'-') + '</td><td>' + escapeHtml(p.address||'-') + '</td><td>' + escapeHtml(p.contact||'-') + '</td><td>' + escapeHtml(p.phone||'-') + '</td>' +
+        '<td class="row-actions"><button data-edit-partner="' + p.id + '">수정</button> <button data-remove-partner="' + p.id + '">삭제</button></td></tr>';
     });
     html += '</tbody></table>';
     area.innerHTML = html;
-    area.querySelectorAll('[data-remove-wh]').forEach(btn => btn.addEventListener('click', () => removeWarehouse(btn.dataset.removeWh)));
-    area.querySelectorAll('[data-wh-move-v]').forEach(btn => btn.addEventListener('click', () => reorder('warehouses', warehouses, btn.dataset.wh, btn.dataset.whMoveV)));
+    area.querySelectorAll('[data-edit-partner]').forEach(btn => btn.addEventListener('click', () => editPartner(btn.dataset.editPartner)));
+    area.querySelectorAll('[data-remove-partner]').forEach(btn => btn.addEventListener('click', () => removePartner(btn.dataset.removePartner)));
   }
 
-  let historyFilter = 'all';
-  document.querySelectorAll('.history-filter-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      historyFilter = btn.dataset.filter;
-      document.querySelectorAll('.history-filter-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      renderHistory();
+  function renderOutboundList() {
+    const area = document.getElementById('outboundListArea');
+    const from = document.getElementById('outFilterFrom').value;
+    const to = document.getElementById('outFilterTo').value;
+    const partnerFilter = document.getElementById('outFilterPartner').value;
+    const statusFilter = document.getElementById('outFilterStatus').value;
+
+    const filtered = outboundList.filter(o => {
+      if (partnerFilter && o.partnerId !== partnerFilter) return false;
+      if (statusFilter && o.status !== statusFilter) return false;
+      if (from || to) {
+        const d = fmtDateOnly(o.createdAt);
+        if (from && d < from) return false;
+        if (to && d > to) return false;
+      }
+      return true;
     });
-  });
-  function renderHistory() {
-    const area = document.getElementById('historyArea');
-    const filtered = historyFilter === 'all' ? historyEntries : historyEntries.filter(h => h.type === historyFilter);
-    if (!filtered.length) { area.innerHTML = '<div class="empty">해당하는 기록이 없어요.</div>'; return; }
-    let html = '<div class="history-list">';
-    filtered.forEach(h => {
-      const badge = h.type === 'in' ? '<span class="badge badge-in">매입</span>' : h.type === 'out' ? '<span class="badge badge-out">매출</span>' : '<span class="badge badge-move">이동</span>';
-      const routeText = h.type === 'move' ? (escapeHtml(h.warehouseName) + ' → ' + escapeHtml(h.toWarehouseName)) : escapeHtml(h.warehouseName || '-');
-      const sign = h.type === 'in' ? '+' : h.type === 'out' ? '-' : '';
-      html += '<div class="history-item">' +
-        '<div class="history-left"><span class="history-date">' + fmtDate(h.createdAt) + '</span>' + badge +
-        '<span class="prod-name">' + escapeHtml(h.productName) + '</span>' +
-        '<span style="color:var(--ink-soft);">' + routeText + '</span>' +
-        (h.memo ? '<span style="color:var(--ink-soft);">· ' + escapeHtml(h.memo) + '</span>' : '') +
-        '<span style="color:var(--ink-soft); font-size:11px;">by ' + escapeHtml(h.createdBy || '') + '</span></div>' +
-        '<span class="history-qty">' + sign + h.qty + '개</span></div>';
+
+    if (!filtered.length) { area.innerHTML = '<div class="empty">해당하는 출고 내역이 없어요.</div>'; return; }
+
+    let html = '<table><thead><tr><th>날짜</th><th>제품명</th><th class="num">단가</th><th class="num">수량</th><th class="num">금액</th><th>거래처</th><th>상태</th><th></th></tr></thead><tbody>';
+    filtered.forEach(o => {
+      html += '<tr><td>' + fmtDateOnly(o.createdAt) + '</td><td class="prod-name">' + escapeHtml(o.productName) + '</td>' +
+        '<td class="num">' + fmtMoney(o.price) + '</td><td class="num">' + o.qty + '</td><td class="num">' + fmtMoney(o.amount) + '</td>' +
+        '<td>' + escapeHtml(o.partnerName) + '</td>' +
+        '<td><span class="status-pill ' + (o.status === 'done' ? 'status-done' : 'status-pending') + '">' + (o.status === 'done' ? '이동완료' : '이동대기') + '</span></td>' +
+        '<td class="row-actions" style="display:flex; gap:6px;">' +
+        '<button data-view-invoice="' + o.id + '">명세표</button>' +
+        (o.status !== 'done' ? '<button data-mark-done="' + o.id + '" style="color:var(--primary-dark);">이동완료</button>' : '') +
+        '</td></tr>';
     });
-    html += '</div>';
+    html += '</tbody></table>';
     area.innerHTML = html;
+    area.querySelectorAll('[data-view-invoice]').forEach(btn => btn.addEventListener('click', () => {
+      const o = outboundList.find(x => x.id === btn.dataset.viewInvoice);
+      if (o) showInvoice(o);
+    }));
+    area.querySelectorAll('[data-mark-done]').forEach(btn => btn.addEventListener('click', () => markTransferDone(btn.dataset.markDone)));
   }
+  ['outFilterFrom','outFilterTo','outFilterPartner','outFilterStatus'].forEach(id => {
+    document.getElementById(id).addEventListener('change', renderOutboundList);
+  });
 
   function renderAll() {
-    renderStockTable();
-    renderWarehouseList();
-    refreshFormSelects();
+    refreshPartnerSelects();
+    renderPartnerList();
+    renderOutboundList();
+    renderPendingBanner();
   }
 
   /* ============ 탭 전환 ============ */
