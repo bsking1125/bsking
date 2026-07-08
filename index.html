@@ -169,7 +169,7 @@
     </div>
   </div>
 
-  <div id="pendingTransferBanner" style="display:none;"></div>
+  <div id="pendingTransferBanner" class="transfer-banner" style="display:none;"></div>
 
   <div class="tab-nav" id="tabNav">
     <button class="tab-btn active" data-tab="register">출고 등록</button>
@@ -261,7 +261,7 @@
   <!-- 전체 품목 기록 (날짜별로 한 줄씩) -->
   <div class="tab-panel" data-panel="ledger" style="display:none;">
     <div class="section-head">
-      <div><h2>전체 품목 기록</h2><div class="desc">출고할 때마다 자동으로 한 줄씩 쌓여요. 날짜 · 거래처 · 품목으로 검색/필터할 수 있어요.</div></div>
+      <div><h2>전체 품목 기록</h2><div class="desc">창고이동이 끝난 품목만 여기 쌓여요. 매출처리 누르면 목록에서 빠져요 (헷갈리지 않게요).</div></div>
     </div>
     <div class="add-row" style="margin-bottom:14px;">
       <div class="field" style="flex:1; min-width:140px;"><label>시작일</label><input type="date" id="ledgerFilterFrom"></div>
@@ -518,6 +518,13 @@ function startApp(fbConfig) {
       const t = fmtDateOnly(new Date());
       fromInput.value = t;
       toInput.value = t;
+    }
+    const ledgerFromInput = document.getElementById('ledgerFilterFrom');
+    const ledgerToInput = document.getElementById('ledgerFilterTo');
+    if (!ledgerFromInput.value && !ledgerToInput.value) {
+      const t = fmtDateOnly(new Date());
+      ledgerFromInput.value = t;
+      ledgerToInput.value = t;
     }
     initRealtimeListeners();
     if (admin) initApprovalsListener();
@@ -1176,14 +1183,16 @@ function startApp(fbConfig) {
     const productFilter = document.getElementById('ledgerFilterProduct').value.trim().toLowerCase();
 
     // 출고 건마다 담긴 품목들을 한 줄씩 풀어서 늘어놓아요 (오래된 엑셀 표랑 같은 느낌으로)
+    // 창고이동이 끝났는데 아직 매출처리 안 한 것만 여기 보여요 (매출처리하면 목록에서 빠져요)
     let rows = [];
     outboundList.forEach(o => {
+      if (o.status !== 'done' || o.salesProcessed) return;
       const d = fmtDateOnly(o.createdAt);
       (o.items || []).forEach(it => {
         rows.push({
           date: d, createdAt: o.createdAt, partnerId: o.partnerId, partnerName: o.partnerName,
           name: it.name, spec: it.spec, qty: it.qty, price: it.price, amount: it.amount,
-          status: o.status, outboundId: o.id
+          outboundId: o.id
         });
       });
     });
@@ -1196,17 +1205,25 @@ function startApp(fbConfig) {
       return true;
     });
 
-    if (!rows.length) { area.innerHTML = '<div class="empty">해당하는 기록이 없어요.</div>'; return; }
+    if (!rows.length) { area.innerHTML = '<div class="empty">매출처리 대기 중인 기록이 없어요.</div>'; return; }
 
     let html = '<table><thead><tr><th>날짜</th><th>거래처</th><th>품목명</th><th>규격</th><th class="num">수량</th><th class="num">단가</th><th class="num">금액</th><th>상태</th></tr></thead><tbody>';
     rows.forEach(r => {
       html += '<tr><td>' + r.date + '</td><td class="prod-name">' + escapeHtml(r.partnerName) + '</td>' +
         '<td>' + escapeHtml(r.name) + '</td><td>' + escapeHtml(r.spec||'-') + '</td>' +
         '<td class="num">' + r.qty + '</td><td class="num">' + fmtMoney(r.price) + '</td><td class="num">' + fmtMoney(r.amount) + '</td>' +
-        '<td><span class="status-pill ' + (r.status === 'done' ? 'status-done' : 'status-pending') + '">' + (r.status === 'done' ? '이동완료' : '이동대기') + '</span></td></tr>';
+        '<td><button data-sales-processed="' + r.outboundId + '" style="color:var(--primary-dark); font-weight:700;">매출처리</button></td></tr>';
     });
     html += '</tbody></table>';
     area.innerHTML = html;
+    area.querySelectorAll('[data-sales-processed]').forEach(btn => btn.addEventListener('click', () => markSalesProcessed(btn.dataset.salesProcessed)));
+  }
+  async function markSalesProcessed(outboundId) {
+    if (!confirm('이 출고 건을 매출처리 완료로 표시할까요?\n표시하면 이 목록에서 사라져요 (전체 출고 내역에는 그대로 남아요).')) return;
+    await db.collection('outbound').doc(outboundId).update({
+      salesProcessed: true, salesProcessedAt: firebase.firestore.FieldValue.serverTimestamp(), salesProcessedBy: auth.currentUser.email
+    });
+    showToast('매출처리 완료로 표시했어요.');
   }
   ['ledgerFilterFrom','ledgerFilterTo','ledgerFilterPartner','ledgerFilterProduct'].forEach(id => {
     document.getElementById(id).addEventListener('input', renderLedger);
