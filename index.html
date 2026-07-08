@@ -100,10 +100,10 @@
   .invoice-sheet h1 { text-align:center; font-size:20px; letter-spacing:6px; margin:0 0 2px; }
   .invoice-sheet .sheet-date { text-align:center; font-size:12px; color:#555; margin-bottom:14px; }
   @media print {
-    body * { visibility: hidden; }
-    #invoiceModal, #invoiceModal * { visibility: visible; }
-    #invoiceModal { position: absolute; top:0; left:0; background:#fff !important; display:flex !important; }
-    #invoiceModal .center-box { box-shadow:none !important; border:none !important; max-width:100% !important; width:100%; }
+    @page { size: A4; margin: 12mm; }
+    body > *:not(#invoiceModal) { display: none !important; }
+    #invoiceModal { position: static !important; display: block !important; background: #fff !important; inset: auto !important; }
+    #invoiceModal .center-box { box-shadow:none !important; border:none !important; max-width:100% !important; width:100%; padding:0 !important; margin:0 !important; max-height:none !important; overflow:visible !important; }
     #invoicePrintBtn, #invoiceCloseBtn, #invoiceExcelBtn { display:none !important; }
   }
   .filter-bar button.active { background: var(--primary); color: #fff; border-color: var(--primary); }
@@ -986,7 +986,11 @@ function startApp(fbConfig) {
     if (c.bankInfo) set('C34', c.bankInfo);
 
     const fname = ('거래명세표_' + (order.partnerName||'') + '_' + fmtDateOnly(order.createdAt) + '.xlsx').replace(/[\\/:*?"<>|]/g, '');
-    XLSX.writeFile(wb, fname);
+    // 행 높이 / 열 너비 / 병합 정보가 저장 과정에서 유실되지 않도록 원본 값을 다시 명시적으로 붙여줘요.
+    ws['!merges'] = ws['!merges'] || [];
+    if (ws['!rows']) ws['!rows'] = ws['!rows'];
+    if (ws['!cols']) ws['!cols'] = ws['!cols'];
+    XLSX.writeFile(wb, fname, { cellStyles: true });
   }
   document.getElementById('invoiceExcelBtn').addEventListener('click', () => {
     if (lastShownOrder) exportInvoiceToExcel(lastShownOrder);
