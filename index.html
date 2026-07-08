@@ -174,6 +174,7 @@
   <div class="tab-nav" id="tabNav">
     <button class="tab-btn active" data-tab="register">출고 등록</button>
     <button class="tab-btn" data-tab="outbound-list">출고 내역</button>
+    <button class="tab-btn" data-tab="ledger">전체 품목 기록</button>
     <button class="tab-btn" data-tab="products">품목 관리</button>
     <button class="tab-btn" data-tab="partners">거래처 관리</button>
     <button class="tab-btn" data-tab="approvals" id="approvalsTabBtn" style="display:none;">가입 승인<span id="pendingCountBadge"></span></button>
@@ -255,6 +256,20 @@
       </div>
     </div>
     <div class="table-scroll" id="outboundListArea"></div>
+  </div>
+
+  <!-- 전체 품목 기록 (날짜별로 한 줄씩) -->
+  <div class="tab-panel" data-panel="ledger" style="display:none;">
+    <div class="section-head">
+      <div><h2>전체 품목 기록</h2><div class="desc">출고할 때마다 자동으로 한 줄씩 쌓여요. 날짜 · 거래처 · 품목으로 검색/필터할 수 있어요.</div></div>
+    </div>
+    <div class="add-row" style="margin-bottom:14px;">
+      <div class="field" style="flex:1; min-width:140px;"><label>시작일</label><input type="date" id="ledgerFilterFrom"></div>
+      <div class="field" style="flex:1; min-width:140px;"><label>종료일</label><input type="date" id="ledgerFilterTo"></div>
+      <div class="field" style="flex:1; min-width:160px;"><label>거래처</label><select id="ledgerFilterPartner"><option value="">전체 거래처</option></select></div>
+      <div class="field" style="flex:1; min-width:160px;"><label>품목명 검색</label><input type="text" id="ledgerFilterProduct" placeholder="품목명 일부 입력"></div>
+    </div>
+    <div class="table-scroll" id="ledgerArea"></div>
   </div>
 
   <!-- 품목 관리 -->
@@ -692,6 +707,7 @@ function startApp(fbConfig) {
     const opts = '<option value="">거래처 선택</option>' + list.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
     document.getElementById('regPartnerSelect').innerHTML = opts;
     document.getElementById('outFilterPartner').innerHTML = '<option value="">전체 거래처</option>' + list.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
+    document.getElementById('ledgerFilterPartner').innerHTML = '<option value="">전체 거래처</option>' + list.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
   }
 
   document.getElementById('regPartnerSelect').addEventListener('change', () => {
@@ -1151,11 +1167,57 @@ function startApp(fbConfig) {
     document.getElementById(id).addEventListener('change', renderOutboundList);
   });
 
+  /* ============ 전체 품목 기록 (날짜별로 한 줄씩) ============ */
+  function renderLedger() {
+    const area = document.getElementById('ledgerArea');
+    const from = document.getElementById('ledgerFilterFrom').value;
+    const to = document.getElementById('ledgerFilterTo').value;
+    const partnerFilter = document.getElementById('ledgerFilterPartner').value;
+    const productFilter = document.getElementById('ledgerFilterProduct').value.trim().toLowerCase();
+
+    // 출고 건마다 담긴 품목들을 한 줄씩 풀어서 늘어놓아요 (오래된 엑셀 표랑 같은 느낌으로)
+    let rows = [];
+    outboundList.forEach(o => {
+      const d = fmtDateOnly(o.createdAt);
+      (o.items || []).forEach(it => {
+        rows.push({
+          date: d, createdAt: o.createdAt, partnerId: o.partnerId, partnerName: o.partnerName,
+          name: it.name, spec: it.spec, qty: it.qty, price: it.price, amount: it.amount,
+          status: o.status, outboundId: o.id
+        });
+      });
+    });
+
+    rows = rows.filter(r => {
+      if (partnerFilter && r.partnerId !== partnerFilter) return false;
+      if (productFilter && !(r.name||'').toLowerCase().includes(productFilter)) return false;
+      if (from && r.date < from) return false;
+      if (to && r.date > to) return false;
+      return true;
+    });
+
+    if (!rows.length) { area.innerHTML = '<div class="empty">해당하는 기록이 없어요.</div>'; return; }
+
+    let html = '<table><thead><tr><th>날짜</th><th>거래처</th><th>품목명</th><th>규격</th><th class="num">수량</th><th class="num">단가</th><th class="num">금액</th><th>상태</th></tr></thead><tbody>';
+    rows.forEach(r => {
+      html += '<tr><td>' + r.date + '</td><td class="prod-name">' + escapeHtml(r.partnerName) + '</td>' +
+        '<td>' + escapeHtml(r.name) + '</td><td>' + escapeHtml(r.spec||'-') + '</td>' +
+        '<td class="num">' + r.qty + '</td><td class="num">' + fmtMoney(r.price) + '</td><td class="num">' + fmtMoney(r.amount) + '</td>' +
+        '<td><span class="status-pill ' + (r.status === 'done' ? 'status-done' : 'status-pending') + '">' + (r.status === 'done' ? '이동완료' : '이동대기') + '</span></td></tr>';
+    });
+    html += '</tbody></table>';
+    area.innerHTML = html;
+  }
+  ['ledgerFilterFrom','ledgerFilterTo','ledgerFilterPartner','ledgerFilterProduct'].forEach(id => {
+    document.getElementById(id).addEventListener('input', renderLedger);
+  });
+
   function renderAll() {
     refreshPartnerSelects();
     renderPartnerList();
     renderProductList();
     renderOutboundList();
+    renderLedger();
     renderPendingBanner();
   }
 
