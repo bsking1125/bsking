@@ -216,7 +216,16 @@
     </div>
     <div style="text-align:right; font-size:13px; color:var(--ink-soft); margin-bottom:16px;" id="cartTotalsArea"></div>
 
-    <button class="primary-btn" id="outRegisterBtn" style="width:100%;">출고 등록하고 거래명세표 만들기</button>
+    <div id="editModeNotice" style="display:none; background:var(--amber-tint); color:var(--amber); border:1px solid var(--amber); border-radius:8px; padding:10px 14px; margin-bottom:14px; font-size:12px; display:flex; justify-content:space-between; align-items:center;">
+      <span>기존 출고 건을 수정하는 중이에요.</span>
+      <button class="link-btn" id="cancelEditBtn" style="color:var(--amber);">수정 취소</button>
+    </div>
+    <button class="primary-btn" id="outRegisterBtn" style="width:100%;">출고 등록</button>
+
+    <div id="lastRegisteredArea" style="display:none; margin-top:16px;" class="card">
+      <div style="font-size:13px; margin-bottom:10px;">✅ 방금 <b id="lastRegisteredPartner"></b> 앞으로 출고 등록했어요.</div>
+      <button class="ghost-btn" id="printLastInvoiceBtn" style="width:100%;">거래명세표 출력</button>
+    </div>
   </div>
 
   <!-- 출고 내역 -->
@@ -751,6 +760,40 @@ function startApp(fbConfig) {
       '공급가액 ' + fmtMoney(subtotal) + '원 · 부가세 ' + fmtMoney(vat) + '원 · <b>총액 ' + fmtMoney(subtotal + vat) + '원</b>';
   }
 
+  let editingOutboundId = null;
+  let lastRegisteredOrder = null;
+
+  function resetRegisterForm() {
+    cartItems = [];
+    renderCart();
+    document.getElementById('regPartnerSelect').value = '';
+    document.getElementById('regPartnerInfoCard').style.display = 'none';
+    ['regShipToInput','regReceiverInput','regReceiverPhoneInput','regShipAddressInput'].forEach(id => document.getElementById(id).value = '');
+    editingOutboundId = null;
+    document.getElementById('editModeNotice').style.display = 'none';
+    document.getElementById('outRegisterBtn').textContent = '출고 등록';
+  }
+  document.getElementById('cancelEditBtn').addEventListener('click', () => {
+    resetRegisterForm();
+    showToast('수정을 취소했어요.');
+  });
+
+  function loadOrderIntoRegisterForm(o) {
+    editingOutboundId = o.id;
+    document.getElementById('editModeNotice').style.display = 'flex';
+    document.getElementById('outRegisterBtn').textContent = '수정 내용 저장';
+    document.getElementById('lastRegisteredArea').style.display = 'none';
+    document.getElementById('regPartnerSelect').value = o.partnerId || '';
+    document.getElementById('regPartnerSelect').dispatchEvent(new Event('change'));
+    document.getElementById('regShipToInput').value = o.shipTo || '';
+    document.getElementById('regReceiverInput').value = o.receiver || '';
+    document.getElementById('regReceiverPhoneInput').value = o.receiverPhone || '';
+    document.getElementById('regShipAddressInput').value = o.shipAddress || '';
+    cartItems = (o.items || []).map(it => ({ productId: null, name: it.name, spec: it.spec, price: it.price, qty: it.qty, note: it.note || '' }));
+    renderCart();
+    document.querySelector('.tab-btn[data-tab="register"]').click();
+  }
+
   document.getElementById('outRegisterBtn').addEventListener('click', async () => {
     const partnerId = document.getElementById('regPartnerSelect').value;
     const p = partners.find(p => p.id === partnerId);
@@ -768,19 +811,34 @@ function startApp(fbConfig) {
       receiverPhone: document.getElementById('regReceiverPhoneInput').value.trim(),
       shipAddress: document.getElementById('regShipAddressInput').value.trim() || p.address || '',
       items: cartItems.map(it => ({ name: it.name, spec: it.spec, price: it.price, qty: it.qty, amount: it.price*it.qty, note: it.note })),
-      subtotal, vat, total: subtotal + vat,
-      status: 'pending',
-      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-      createdBy: auth.currentUser.email
+      subtotal, vat, total: subtotal + vat
     };
-    const docRef = await db.collection('outbound').add(order);
-    cartItems = [];
-    renderCart();
-    document.getElementById('regPartnerSelect').value = '';
-    document.getElementById('regPartnerInfoCard').style.display = 'none';
-    ['regShipToInput','regReceiverInput','regReceiverPhoneInput','regShipAddressInput'].forEach(id => document.getElementById(id).value = '');
-    showToast('출고 등록 완료. 거래명세표를 보여드릴게요.');
-    showInvoice({ id: docRef.id, ...order, createdAt: new Date() });
+
+    if (editingOutboundId) {
+      await db.collection('outbound').doc(editingOutboundId).update({
+        ...order, editedAt: firebase.firestore.FieldValue.serverTimestamp(), editedBy: auth.currentUser.email
+      });
+      showToast('출고 내용을 수정했어요.');
+      resetRegisterForm();
+      document.querySelector('.tab-btn[data-tab="outbound-list"]').click();
+    } else {
+      order.status = 'pending';
+      order.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+      order.createdBy = auth.currentUser.email;
+      const docRef = await db.collection('outbound').add(order);
+      lastRegisteredOrder = { id: docRef.id, ...order, createdAt: new Date() };
+      cartItems = [];
+      renderCart();
+      document.getElementById('regPartnerSelect').value = '';
+      document.getElementById('regPartnerInfoCard').style.display = 'none';
+      ['regShipToInput','regReceiverInput','regReceiverPhoneInput','regShipAddressInput'].forEach(id => document.getElementById(id).value = '');
+      document.getElementById('lastRegisteredPartner').textContent = p.name;
+      document.getElementById('lastRegisteredArea').style.display = 'block';
+      showToast('출고 등록 완료했어요.');
+    }
+  });
+  document.getElementById('printLastInvoiceBtn').addEventListener('click', () => {
+    if (lastRegisteredOrder) showInvoice(lastRegisteredOrder);
   });
 
   async function markTransferDone(id) {
@@ -789,6 +847,14 @@ function startApp(fbConfig) {
       status: 'done', completedAt: firebase.firestore.FieldValue.serverTimestamp(), completedBy: auth.currentUser.email
     });
     showToast('창고이동 완료 처리했어요.');
+  }
+
+  async function unmarkTransferDone(id) {
+    if (!confirm('이 건을 다시 "창고이동 대기중"으로 되돌릴까요?')) return;
+    await db.collection('outbound').doc(id).update({
+      status: 'pending', completedAt: firebase.firestore.FieldValue.delete(), completedBy: firebase.firestore.FieldValue.delete()
+    });
+    showToast('이동완료를 취소했어요.');
   }
 
   /* ============ 거래명세표 ============ */
@@ -904,7 +970,10 @@ function startApp(fbConfig) {
         '<td><span class="status-pill ' + (o.status === 'done' ? 'status-done' : 'status-pending') + '">' + (o.status === 'done' ? '이동완료' : '이동대기') + '</span></td>' +
         '<td class="row-actions" style="display:flex; gap:6px;">' +
         '<button data-view-invoice="' + o.id + '">명세표</button>' +
-        (o.status !== 'done' ? '<button data-mark-done="' + o.id + '" style="color:var(--primary-dark);">이동완료</button>' : '') +
+        '<button data-edit-outbound="' + o.id + '">수정</button>' +
+        (o.status !== 'done'
+          ? '<button data-mark-done="' + o.id + '" style="color:var(--primary-dark);">이동완료</button>'
+          : '<button data-unmark-done="' + o.id + '" style="color:var(--red);">이동취소</button>') +
         '</td></tr>';
     });
     html += '</tbody></table>';
@@ -914,6 +983,11 @@ function startApp(fbConfig) {
       if (o) showInvoice(o);
     }));
     area.querySelectorAll('[data-mark-done]').forEach(btn => btn.addEventListener('click', () => markTransferDone(btn.dataset.markDone)));
+    area.querySelectorAll('[data-unmark-done]').forEach(btn => btn.addEventListener('click', () => unmarkTransferDone(btn.dataset.unmarkDone)));
+    area.querySelectorAll('[data-edit-outbound]').forEach(btn => btn.addEventListener('click', () => {
+      const o = outboundList.find(x => x.id === btn.dataset.editOutbound);
+      if (o) loadOrderIntoRegisterForm(o);
+    }));
   }
   ['outFilterFrom','outFilterTo','outFilterPartner','outFilterStatus'].forEach(id => {
     document.getElementById(id).addEventListener('change', renderOutboundList);
