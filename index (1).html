@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>최뚜비</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#2F6F4E">
+<link rel="apple-touch-icon" href="icon-192.png">
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+  :root {
+    --bg: #F6F7F3; --surface: #FFFFFF; --ink: #1F2A22; --ink-soft: #5B6459; --line: #DEE2D6;
+    --primary: #2F6F4E; --primary-dark: #1F4D36; --primary-tint: #E5F0E9;
+    --red: #B0402F; --red-tint: #FBEAE6;
+    --amber: #9A6B1E; --amber-tint: #FBF1E0;
+    --mono: 'JetBrains Mono', 'Courier New', monospace;
+    --sans: 'Pretendard', -apple-system, BlinkMacSystemFont, 'Malgun Gothic', sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: var(--sans); background: var(--bg); color: var(--ink); padding: 32px 24px 64px; }
+  .wrap { max-width: 1100px; margin: 0 auto; }
+  .title { font-size: 22px; font-weight: 800; color: var(--ink); }
+  .subtitle { font-size: 13px; color: var(--ink-soft); margin-top: 4px; margin-bottom: 18px; }
+  h2 { font-size: 16px; margin: 0; }
+  .desc { font-size: 12px; color: var(--ink-soft); margin-top: 2px; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 22px; }
+  .center-screen { position: fixed; inset: 0; z-index: 999; background: var(--bg); display: flex; align-items: center; justify-content: center; padding: 24px; }
+  .center-box { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 32px 28px; width: 100%; max-width: 420px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); }
+  .center-box h1 { font-size: 18px; margin: 0 0 6px; }
+  .center-box .sub { font-size: 13px; color: var(--ink-soft); margin-bottom: 18px; line-height: 1.5; }
+  input, textarea, select { font-family: var(--sans); font-size: 14px; border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px; background: var(--surface); color: var(--ink); }
+  input:focus, textarea:focus, select:focus { outline: none; border-color: var(--primary); }
+  textarea { width: 100%; font-family: var(--mono); font-size: 12px; resize: vertical; }
+  .field { margin-bottom: 12px; }
+  .field label { display: block; font-size: 12px; color: var(--ink-soft); margin-bottom: 5px; }
+  .field input, .field textarea { width: 100%; }
+  .primary-btn { background: var(--primary); color: #fff; border: none; padding: 9px 16px; border-radius: 7px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  .primary-btn:disabled { opacity: 0.5; cursor: default; }
+  .primary-btn:hover:not(:disabled) { background: var(--primary-dark); }
+  .ghost-btn { background: transparent; color: var(--ink); border: 1px solid var(--line); padding: 8px 14px; border-radius: 7px; font-size: 12px; cursor: pointer; }
+  .ghost-btn:hover { border-color: var(--primary); color: var(--primary-dark); }
+  .danger-btn { background: var(--red); color: #fff; border: none; padding: 8px 16px; border-radius: 7px; font-size: 13px; font-weight: 700; cursor: pointer; }
+  .danger-btn:hover { background: #8f3325; }
+  .link-btn { background: none; border: none; color: var(--primary-dark); font-size: 12px; cursor: pointer; text-decoration: underline; padding: 0; }
+  .error-text { color: var(--red); font-size: 12px; margin-top: 8px; min-height: 14px; }
+  .info-box { background: var(--primary-tint); border: 1px solid var(--primary); border-radius: 8px; padding: 10px 14px; font-size: 11px; color: var(--primary-dark); line-height: 1.6; margin-bottom: 14px; white-space: pre-wrap; }
+  .code-box { background: #1F2A22; color: #E5F0E9; font-family: var(--mono); font-size: 11px; border-radius: 8px; padding: 10px 12px; white-space: pre-wrap; word-break: break-all; margin: 8px 0; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 18px; flex-wrap: wrap; }
+  .user-chip { font-size: 12px; color: var(--ink-soft); display: flex; align-items: center; gap: 10px; }
+  .tab-nav { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 20px; flex-wrap: wrap; }
+  .tab-btn { background: none; border: none; padding: 10px 14px; font-size: 13px; font-weight: 600; color: var(--ink-soft); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+  .tab-btn.active { color: var(--primary-dark); border-bottom-color: var(--primary); }
+  .tab-btn:hover { color: var(--ink); }
+  .count-badge { display:inline-block; background: var(--red); color:#fff; font-size:10px; font-weight:700; border-radius:9px; padding:1px 6px; margin-left:5px; }
+  .section-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; flex-wrap: wrap; }
+  .add-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .add-row input, .add-row select { flex: 1; min-width: 120px; }
+  .qty { max-width: 100px; flex: none !important; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+  th { color: var(--ink-soft); font-weight: 600; font-size: 12px; }
+  td.num, th.num { text-align: right; font-family: var(--mono); }
+  .table-scroll { overflow-x: auto; }
+  .prod-name { font-weight: 600; }
+  .empty { color: var(--ink-soft); font-size: 13px; padding: 30px 10px; text-align: center; }
+  .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(20px); background: var(--ink); color: #fff; padding: 10px 18px; border-radius: 8px; font-size: 13px; opacity: 0; pointer-events: none; transition: all .2s ease; z-index: 2000; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .badge { font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 10px; }
+  .badge-in { background: var(--primary-tint); color: var(--primary-dark); }
+  .badge-out { background: var(--red-tint); color: var(--red); }
+  .badge-move { background: var(--amber-tint); color: var(--amber); }
+  .row-actions button { background: none; border: none; color: var(--ink-soft); font-size: 12px; cursor: pointer; }
+  .row-actions button:hover { color: var(--red); }
+  .arrow-btn { cursor: pointer; color: var(--ink-soft); font-size: 9px; padding: 1px; border-radius: 4px; opacity: 0; width: 0; overflow: hidden; display: inline-block; transition: opacity .12s ease, width .12s ease; }
+  .arrow-btn:hover { background: var(--primary-tint); color: var(--primary-dark); }
+  .arrow-btn-danger:hover { background: var(--red-tint); color: var(--red); }
+  tbody tr:hover .arrow-btn, th.wh-header:hover .arrow-btn { opacity: 1; width: 10px; }
+  .history-list { display: flex; flex-direction: column; gap: 6px; }
+  .history-item { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 12px; background: var(--bg); border-radius: 8px; font-size: 12px; flex-wrap: wrap; }
+  .history-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .history-date { color: var(--ink-soft); font-family: var(--mono); font-size: 11px; }
+  .history-qty { font-family: var(--mono); font-weight: 700; }
+  .filter-bar { display: flex; gap: 6px; margin-bottom: 12px; }
+  .transfer-banner { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; background: var(--red-tint); border:1px solid var(--red); color: var(--red); border-radius: 10px; padding: 12px 16px; margin-bottom: 18px; font-size: 13px; font-weight:600; }
+  .status-pill { display:inline-block; font-size:11px; font-weight:700; padding:3px 9px; border-radius:10px; }
+  .status-pending { background: var(--red-tint); color: var(--red); }
+  .status-done { background: var(--primary-tint); color: var(--primary-dark); }
+  .invoice-table { width:100%; border-collapse:collapse; font-size:13px; margin: 14px 0; }
+  .invoice-table th, .invoice-table td { border:1px solid var(--line); padding:8px 10px; }
+  @media print {
+    body * { visibility: hidden; }
+    #invoiceModal, #invoiceModal * { visibility: visible; }
+    #invoiceModal { position: absolute; top:0; left:0; background:#fff !important; display:flex !important; }
+    #invoiceModal .center-box { box-shadow:none !important; border:none !important; max-width:100% !important; width:100%; }
+    #invoicePrintBtn, #invoiceCloseBtn { display:none !important; }
+  }
+  .filter-bar button.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+</style>
+</head>
+<body>
+
+<!-- 로그인 / 회원가입 화면 -->
+<div id="loginGate" class="center-screen" style="display:none;">
+  <div class="center-box">
+    <h1>최뚜비</h1>
+    <div class="tab-nav" style="margin-bottom:18px;">
+      <button class="tab-btn active" id="showLoginTabBtn" style="flex:1; text-align:center;">로그인</button>
+      <button class="tab-btn" id="showSignupTabBtn" style="flex:1; text-align:center;">회원가입</button>
+    </div>
+
+    <div id="loginForm">
+      <div class="sub">이메일/비밀번호로 로그인해주세요.</div>
+      <div class="field"><label>이메일</label><input type="email" id="loginEmailInput" autocomplete="username"></div>
+      <div class="field"><label>비밀번호</label><input type="password" id="loginPasswordInput" autocomplete="current-password"></div>
+      <button class="primary-btn" id="loginSubmitBtn" style="width:100%;">로그인</button>
+      <div class="error-text" id="loginError"></div>
+      <div style="text-align:center; margin-top:14px;">
+        <button class="link-btn" id="forgotPwBtn">비밀번호를 잊으셨나요? (재설정 메일 보내기)</button>
+      </div>
+    </div>
+
+    <div id="signupForm" style="display:none;">
+      <div class="sub">가입하면 관리자가 승인해야 이용할 수 있어요.</div>
+      <div class="field"><label>이메일</label><input type="email" id="signupEmailInput" autocomplete="username"></div>
+      <div class="field"><label>비밀번호 (6자 이상)</label><input type="password" id="signupPasswordInput" autocomplete="new-password"></div>
+      <div class="field"><label>비밀번호 확인</label><input type="password" id="signupPasswordConfirmInput" autocomplete="new-password"></div>
+      <button class="primary-btn" id="signupSubmitBtn" style="width:100%;">가입 신청하기</button>
+      <div class="error-text" id="signupError"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 앱 본체 -->
+<!-- 승인 대기 화면 -->
+<div id="pendingGate" class="center-screen" style="display:none;">
+  <div class="center-box" style="text-align:center;">
+    <h1>승인 대기 중</h1>
+    <div class="sub">가입은 완료됐어요. 관리자가 승인하면 바로 이용할 수 있어요. 이 화면은 승인되면 자동으로 넘어가요.</div>
+    <div class="user-chip" style="justify-content:center; margin-top:14px;">
+      <span id="pendingUserEmail"></span>
+      <button class="ghost-btn" id="pendingLogoutBtn">로그아웃</button>
+    </div>
+  </div>
+</div>
+
+<div class="wrap" id="appWrap" style="display:none;">
+
+  <div class="topbar">
+    <div>
+      <div class="title">충인농 창고지기</div>
+      <div class="subtitle" style="margin:2px 0 0;">출고할 때마다 거래명세표를 만들고, 창고이동을 놓치지 않게 관리해요</div>
+    </div>
+    <div class="user-chip">
+      <span id="currentUserEmail"></span>
+      <button class="ghost-btn" id="logoutBtn">로그아웃</button>
+    </div>
+  </div>
+
+  <div id="pendingTransferBanner" style="display:none;"></div>
+
+  <div class="tab-nav" id="tabNav">
+    <button class="tab-btn active" data-tab="register">출고 등록</button>
+    <button class="tab-btn" data-tab="outbound-list">출고 내역</button>
+    <button class="tab-btn" data-tab="partners">거래처 관리</button>
+    <button class="tab-btn" data-tab="approvals" id="approvalsTabBtn" style="display:none;">가입 승인<span id="pendingCountBadge"></span></button>
+  </div>
+
+  <!-- 가입 승인 (관리자 전용) -->
+  <div class="tab-panel" data-panel="approvals" style="display:none;">
+    <div class="section-head">
+      <div><h2>가입 승인</h2><div class="desc">회원가입한 사람이 여기 뜨면 승인해줘야 앱을 쓸 수 있어요.</div></div>
+    </div>
+    <div id="approvalsListArea"></div>
+  </div>
+
+  <!-- 출고 등록 -->
+  <div class="tab-panel" data-panel="register">
+    <div class="section-head">
+      <div><h2>출고 등록</h2><div class="desc">제품명 · 가격 · 수량 · 공급처(거래처)를 입력하면 거래명세표를 바로 만들어줘요.</div></div>
+    </div>
+    <div class="card">
+      <div class="field"><label>제품명</label><input type="text" id="outProductInput" placeholder="예: 황제침향원 60환"></div>
+      <div class="add-row">
+        <div class="field" style="flex:1; min-width:120px;"><label>가격 (단가)</label><input type="number" id="outPriceInput" placeholder="원" min="0"></div>
+        <div class="field" style="flex:1; min-width:120px;"><label>수량</label><input type="number" id="outQtyInput" placeholder="수량" min="1"></div>
+      </div>
+      <div class="field">
+        <label>공급처 (거래처)</label>
+        <select id="outPartnerSelect"></select>
+      </div>
+      <div class="desc" style="margin-bottom:10px;">목록에 없는 거래처면 "거래처 관리" 탭에서 먼저 등록해주세요.</div>
+      <button class="primary-btn" id="outRegisterBtn" style="width:100%;">출고 등록하고 거래명세표 만들기</button>
+    </div>
+  </div>
+
+  <!-- 출고 내역 -->
+  <div class="tab-panel" data-panel="outbound-list" style="display:none;">
+    <div class="section-head">
+      <div><h2>출고 내역</h2><div class="desc">날짜 · 거래처 · 상태로 필터해서 볼 수 있어요.</div></div>
+    </div>
+    <div class="add-row" style="margin-bottom:14px;">
+      <div class="field" style="flex:1; min-width:140px;"><label>시작일</label><input type="date" id="outFilterFrom"></div>
+      <div class="field" style="flex:1; min-width:140px;"><label>종료일</label><input type="date" id="outFilterTo"></div>
+      <div class="field" style="flex:1; min-width:160px;"><label>거래처</label><select id="outFilterPartner"><option value="">전체 거래처</option></select></div>
+      <div class="field" style="flex:1; min-width:140px;"><label>상태</label>
+        <select id="outFilterStatus">
+          <option value="">전체</option>
+          <option value="pending">창고이동 대기중</option>
+          <option value="done">창고이동 완료</option>
+        </select>
+      </div>
+    </div>
+    <div class="table-scroll" id="outboundListArea"></div>
+  </div>
+
+  <!-- 거래처 관리 -->
+  <div class="tab-panel" data-panel="partners" style="display:none;">
+    <div class="section-head">
+      <div><h2>우리 회사 정보</h2><div class="desc">거래명세표 위쪽 "공급자" 칸에 표시돼요. 한 번만 등록해두면 돼요.</div></div>
+    </div>
+    <div class="card" style="margin-bottom:24px;">
+      <div class="add-row">
+        <div class="field" style="flex:1; min-width:160px;"><label>회사명</label><input type="text" id="companyNameInput"></div>
+        <div class="field" style="flex:1; min-width:160px;"><label>사업자번호</label><input type="text" id="companyBizNoInput"></div>
+      </div>
+      <div class="add-row">
+        <div class="field" style="flex:2; min-width:220px;"><label>주소</label><input type="text" id="companyAddressInput"></div>
+        <div class="field" style="flex:1; min-width:140px;"><label>연락처</label><input type="text" id="companyPhoneInput"></div>
+      </div>
+      <button class="primary-btn" id="saveCompanyBtn">저장</button>
+    </div>
+
+    <div class="section-head">
+      <div><h2>거래처 등록</h2><div class="desc">출고 등록할 때 여기서 고른 거래처가 거래명세표의 "공급받는자"가 돼요.</div></div>
+    </div>
+    <div class="card" style="margin-bottom:20px;">
+      <div class="add-row">
+        <div class="field" style="flex:1; min-width:160px;"><label>거래처명 *</label><input type="text" id="partnerNameInput"></div>
+        <div class="field" style="flex:1; min-width:160px;"><label>사업자번호</label><input type="text" id="partnerBizNoInput"></div>
+      </div>
+      <div class="add-row">
+        <div class="field" style="flex:2; min-width:220px;"><label>주소</label><input type="text" id="partnerAddressInput"></div>
+        <div class="field" style="flex:1; min-width:140px;"><label>담당자</label><input type="text" id="partnerContactInput"></div>
+        <div class="field" style="flex:1; min-width:140px;"><label>연락처</label><input type="text" id="partnerPhoneInput"></div>
+      </div>
+      <button class="primary-btn" id="addPartnerBtn">거래처 추가</button>
+    </div>
+    <div id="partnerListArea"></div>
+  </div>
+
+</div>
+
+<!-- 거래명세표 보기/인쇄 -->
+<div id="invoiceModal" class="center-screen" style="display:none;">
+  <div class="center-box" style="max-width:560px;">
+    <div id="invoiceContent"></div>
+    <div style="margin-top:18px; display:flex; gap:8px;">
+      <button class="primary-btn" id="invoicePrintBtn" style="flex:1;">인쇄하기</button>
+      <button class="ghost-btn" id="invoiceCloseBtn">닫기</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// 이 파일이 웹 호스팅(예: GitHub Pages)에서 열렸을 때만 PWA 설치/오프라인 캐시가 동작해요.
+// 컴퓨터에서 그냥 파일 더블클릭으로 열면(file:// 주소) 이 부분은 조용히 무시돼요.
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  });
+}
+</script>
+
+<script>
+/* ============ 유틸 ============ */
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2200);
+}
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+}
+function fmtDate(ts) {
+  if (!ts) return '';
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  const p = n => String(n).padStart(2, '0');
+  return d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+
+/* ============ Firebase 설정 (이 회사 전용으로 코드 안에 고정) ============ */
+// apiKey는 비밀번호가 아니라 "이 프로젝트를 가리키는 주소" 역할이라 코드에 그대로 넣어도 안전해요.
+// 실제 보안은 Firestore 규칙(로그인한 사람만 읽고 쓰기)이 담당해요.
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyCsJidfl-KBsVqe3A8ALvnbQa51mUVk7EI",
+  authDomain: "kingbs.firebaseapp.com",
+  projectId: "kingbs",
+  storageBucket: "kingbs.firebasestorage.app",
+  messagingSenderId: "1078471064836",
+  appId: "1:1078471064836:web:2261c6ebe9e14474042451",
+  measurementId: "G-J3PC2LYE6E"
+};
+startApp(FIREBASE_CONFIG);
+
+function startApp(fbConfig) {
+  firebase.initializeApp(fbConfig);
+  const auth = firebase.auth();
+  const db = firebase.firestore();
+
+  // 승인 권한을 가진 이메일들 (여기에 있는 계정은 가입 승인 없이 항상 바로 이용 가능해요)
+  const ADMIN_EMAILS = ['qudtjd2222@gmail.com'];
+  function isAdminEmail(email) { return !!email && ADMIN_EMAILS.includes(email); }
+
+  // 자동 로그인: 한 번 로그인하면, 로그아웃하기 전까지는 앱을 다시 열어도 계속 로그인 상태가 유지돼요.
+  auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(() => {});
+
+  /* ============ 2단계: 로그인 ============ */
+  document.getElementById('loginSubmitBtn').addEventListener('click', () => {
+    const email = document.getElementById('loginEmailInput').value.trim();
+    const pw = document.getElementById('loginPasswordInput').value;
+    const errEl = document.getElementById('loginError');
+    errEl.textContent = '';
+    auth.signInWithEmailAndPassword(email, pw).catch(err => {
+      errEl.textContent = '로그인에 실패했어요. 이메일/비밀번호를 확인해주세요. (' + err.code + ')';
+    });
+  });
+  document.getElementById('loginPasswordInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('loginSubmitBtn').click();
+  });
+  document.getElementById('forgotPwBtn').addEventListener('click', () => {
+    const email = document.getElementById('loginEmailInput').value.trim();
+    if (!email) { showToast('먼저 이메일을 입력해주세요.'); return; }
+    auth.sendPasswordResetEmail(email)
+      .then(() => showToast(email + '로 비밀번호 재설정 메일을 보냈어요.'))
+      .catch(err => showToast('메일 전송에 실패했어요. (' + err.code + ')'));
+  });
+  document.getElementById('logoutBtn').addEventListener('click', () => auth.signOut());
+
+  /* ============ 회원가입 ============ */
+  document.getElementById('showLoginTabBtn').addEventListener('click', () => {
+    document.getElementById('showLoginTabBtn').classList.add('active');
+    document.getElementById('showSignupTabBtn').classList.remove('active');
+    document.getElementById('loginForm').style.display = '';
+    document.getElementById('signupForm').style.display = 'none';
+  });
+  document.getElementById('showSignupTabBtn').addEventListener('click', () => {
+    document.getElementById('showSignupTabBtn').classList.add('active');
+    document.getElementById('showLoginTabBtn').classList.remove('active');
+    document.getElementById('signupForm').style.display = '';
+    document.getElementById('loginForm').style.display = 'none';
+  });
+
+  document.getElementById('signupSubmitBtn').addEventListener('click', async () => {
+    const email = document.getElementById('signupEmailInput').value.trim();
+    const pw = document.getElementById('signupPasswordInput').value;
+    const pw2 = document.getElementById('signupPasswordConfirmInput').value;
+    const errEl = document.getElementById('signupError');
+    errEl.textContent = '';
+
+    if (!email || !pw) { errEl.textContent = '이메일과 비밀번호를 입력해주세요.'; return; }
+    if (pw.length < 6) { errEl.textContent = '비밀번호는 6자 이상이어야 해요.'; return; }
+    if (pw !== pw2) { errEl.textContent = '비밀번호가 서로 달라요.'; return; }
+
+    try {
+      const cred = await auth.createUserWithEmailAndPassword(email, pw);
+      await db.collection('users').doc(cred.user.uid).set({
+        email, approved: false, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      showToast('가입 완료! 관리자 승인을 기다려주세요.');
+      // 성공하면 onAuthStateChanged가 알아서 감지해서 승인 대기 화면으로 넘어가요.
+    } catch (err) {
+      if (err.code === 'auth/email-already-in-use') errEl.textContent = '이미 가입된 이메일이에요. 로그인 탭에서 로그인해주세요.';
+      else if (err.code === 'auth/invalid-email') errEl.textContent = '이메일 형식이 올바르지 않아요.';
+      else errEl.textContent = '가입에 실패했어요. (' + err.code + ')';
+    }
+  });
+
+  document.getElementById('pendingLogoutBtn').addEventListener('click', () => auth.signOut());
+
+  let unsubscribeOwnProfile = null;
+  auth.onAuthStateChanged(user => {
+    if (unsubscribeOwnProfile) { unsubscribeOwnProfile(); unsubscribeOwnProfile = null; }
+
+    if (!user) {
+      if (approvalsUnsub) { approvalsUnsub(); approvalsUnsub = null; }
+      document.getElementById('appWrap').style.display = 'none';
+      document.getElementById('pendingGate').style.display = 'none';
+      document.getElementById('loginGate').style.display = 'flex';
+      return;
+    }
+
+    if (isAdminEmail(user.email)) {
+      enterApp(user, true);
+      return;
+    }
+
+    // 관리자가 아니면, 본인의 승인 상태를 실시간으로 지켜봐요.
+    // (관리자가 승인 버튼을 누르는 순간 이 화면이 자동으로 앱으로 넘어가요)
+    unsubscribeOwnProfile = db.collection('users').doc(user.uid).onSnapshot(doc => {
+      const approved = doc.exists && doc.data().approved === true;
+      if (approved) {
+        enterApp(user, false);
+      } else {
+        document.getElementById('appWrap').style.display = 'none';
+        document.getElementById('loginGate').style.display = 'none';
+        document.getElementById('pendingGate').style.display = 'flex';
+        document.getElementById('pendingUserEmail').textContent = user.email;
+      }
+    }, () => {
+      // 문서를 읽을 권한이 없거나 아직 없으면 승인 대기 취급
+      document.getElementById('appWrap').style.display = 'none';
+      document.getElementById('loginGate').style.display = 'none';
+      document.getElementById('pendingGate').style.display = 'flex';
+      document.getElementById('pendingUserEmail').textContent = user.email;
+    });
+  });
+
+  function enterApp(user, admin) {
+    document.getElementById('pendingGate').style.display = 'none';
+    document.getElementById('loginGate').style.display = 'none';
+    document.getElementById('appWrap').style.display = '';
+    document.getElementById('currentUserEmail').textContent = user.email + (admin ? ' (관리자)' : '');
+    document.getElementById('approvalsTabBtn').style.display = admin ? '' : 'none';
+    initRealtimeListeners();
+    if (admin) initApprovalsListener();
+  }
+
+  let approvalsUnsub = null;
+  let pendingUsers = [];
+  function initApprovalsListener() {
+    if (approvalsUnsub) return;
+    approvalsUnsub = db.collection('users').onSnapshot(snap => {
+      pendingUsers = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => !u.approved);
+      const badge = document.getElementById('pendingCountBadge');
+      badge.innerHTML = pendingUsers.length ? '<span class="count-badge">' + pendingUsers.length + '</span>' : '';
+      renderApprovals();
+    }, err => showToast('가입 목록을 불러오지 못했어요: ' + err.message));
+  }
+  function renderApprovals() {
+    const area = document.getElementById('approvalsListArea');
+    if (!area) return;
+    if (!pendingUsers.length) { area.innerHTML = '<div class="empty">승인 대기 중인 가입 신청이 없어요.</div>'; return; }
+    let html = '<table><thead><tr><th>이메일</th><th>신청일시</th><th></th></tr></thead><tbody>';
+    pendingUsers.forEach(u => {
+      html += '<tr><td class="prod-name">' + escapeHtml(u.email) + '</td><td>' + fmtDate(u.createdAt) + '</td>' +
+        '<td class="row-actions"><button class="primary-btn" style="padding:6px 12px; font-size:12px;" data-approve="' + u.id + '">승인</button></td></tr>';
+    });
+    html += '</tbody></table>';
+    area.innerHTML = html;
+    area.querySelectorAll('[data-approve]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        await db.collection('users').doc(btn.dataset.approve).update({
+          approved: true, approvedAt: firebase.firestore.FieldValue.serverTimestamp(), approvedBy: auth.currentUser.email
+        });
+        showToast('승인했어요.');
+      });
+    });
+  }
+
+  /* ============ 3단계: 실시간 데이터 ============ */
+  let partners = [];      // [{id, name, bizNo, address, contact, phone, order}]
+  let outboundList = [];  // [{id, productName, price, qty, amount, partnerId, partnerName, status, createdAt, createdBy}]
+  let company = null;     // 우리 회사 정보 (공급자)
+
+  function orderedPartners() { return [...partners].sort((a,b) => (a.order||0) - (b.order||0)); }
+  function partnerName(id) { const p = partners.find(p => p.id === id); return p ? p.name : '(삭제된 거래처)'; }
+  function fmtMoney(n) { return (n || 0).toLocaleString('ko-KR'); }
+  function fmtDateOnly(ts) {
+    if (!ts) return '';
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    const p = n => String(n).padStart(2, '0');
+    return d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate());
+  }
+
+  let listenersStarted = false;
+  function initRealtimeListeners() {
+    if (listenersStarted) return;
+    listenersStarted = true;
+
+    db.collection('partners').onSnapshot(snap => {
+      partners = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderAll();
+    }, err => showToast('거래처 정보를 불러오지 못했어요: ' + err.message));
+
+    db.collection('outbound').orderBy('createdAt', 'desc').limit(500).onSnapshot(snap => {
+      outboundList = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderAll();
+    }, err => showToast('출고 내역을 불러오지 못했어요: ' + err.message));
+
+    db.collection('settings').doc('company').onSnapshot(doc => {
+      company = doc.exists ? doc.data() : null;
+      if (company) {
+        document.getElementById('companyNameInput').value = company.name || '';
+        document.getElementById('companyBizNoInput').value = company.bizNo || '';
+        document.getElementById('companyAddressInput').value = company.address || '';
+        document.getElementById('companyPhoneInput').value = company.phone || '';
+      }
+    }, err => showToast('회사 정보를 불러오지 못했어요: ' + err.message));
+  }
+
+  /* ============ 거래처 등록 / 관리 ============ */
+  function nextOrder(list) { return list.reduce((m, x) => Math.max(m, x.order || 0), 0) + 1; }
+
+  document.getElementById('saveCompanyBtn').addEventListener('click', async () => {
+    const name = document.getElementById('companyNameInput').value.trim();
+    if (!name) { showToast('회사명을 입력해주세요.'); return; }
+    await db.collection('settings').doc('company').set({
+      name,
+      bizNo: document.getElementById('companyBizNoInput').value.trim(),
+      address: document.getElementById('companyAddressInput').value.trim(),
+      phone: document.getElementById('companyPhoneInput').value.trim()
+    });
+    showToast('우리 회사 정보를 저장했어요.');
+  });
+
+  document.getElementById('addPartnerBtn').addEventListener('click', async () => {
+    const name = document.getElementById('partnerNameInput').value.trim();
+    if (!name) { showToast('거래처명을 입력해주세요.'); return; }
+    await db.collection('partners').add({
+      name,
+      bizNo: document.getElementById('partnerBizNoInput').value.trim(),
+      address: document.getElementById('partnerAddressInput').value.trim(),
+      contact: document.getElementById('partnerContactInput').value.trim(),
+      phone: document.getElementById('partnerPhoneInput').value.trim(),
+      order: nextOrder(partners),
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    ['partnerNameInput','partnerBizNoInput','partnerAddressInput','partnerContactInput','partnerPhoneInput'].forEach(id => document.getElementById(id).value = '');
+    showToast('"' + name + '" 거래처를 등록했어요.');
+  });
+
+  async function editPartner(id) {
+    const p = partners.find(p => p.id === id);
+    if (!p) return;
+    const name = prompt('거래처명', p.name);
+    if (name === null) return;
+    const bizNo = prompt('사업자번호', p.bizNo || '');
+    if (bizNo === null) return;
+    const address = prompt('주소', p.address || '');
+    if (address === null) return;
+    const contact = prompt('담당자', p.contact || '');
+    if (contact === null) return;
+    const phone = prompt('연락처', p.phone || '');
+    if (phone === null) return;
+    await db.collection('partners').doc(id).update({ name: name.trim() || p.name, bizNo, address, contact, phone });
+    showToast('거래처 정보를 수정했어요.');
+  }
+
+  async function removePartner(id) {
+    const name = partnerName(id);
+    if (!confirm('"' + name + '" 거래처를 삭제할까요? (이미 등록된 출고 내역은 그대로 남아요)')) return;
+    await db.collection('partners').doc(id).delete();
+    showToast('"' + name + '" 거래처를 삭제했어요.');
+  }
+
+  /* ============ 출고 등록 ============ */
+  function refreshPartnerSelects() {
+    const list = orderedPartners();
+    const opts = '<option value="">거래처 선택</option>' + list.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
+    document.getElementById('outPartnerSelect').innerHTML = opts;
+    document.getElementById('outFilterPartner').innerHTML = '<option value="">전체 거래처</option>' + list.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
+  }
+
+  document.getElementById('outRegisterBtn').addEventListener('click', async () => {
+    const productName = document.getElementById('outProductInput').value.trim();
+    const price = Math.round(Number(document.getElementById('outPriceInput').value));
+    const qty = Math.round(Number(document.getElementById('outQtyInput').value));
+    const partnerId = document.getElementById('outPartnerSelect').value;
+    if (!productName || !price || price < 0 || !qty || qty <= 0 || !partnerId) {
+      showToast('제품명 · 가격 · 수량 · 거래처를 모두 입력해주세요.');
+      return;
+    }
+    const pName = partnerName(partnerId);
+    const amount = price * qty;
+    const docRef = await db.collection('outbound').add({
+      productName, price, qty, amount, partnerId, partnerName: pName,
+      status: 'pending',
+      createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      createdBy: auth.currentUser.email
+    });
+    document.getElementById('outProductInput').value = '';
+    document.getElementById('outPriceInput').value = '';
+    document.getElementById('outQtyInput').value = '';
+    showToast('출고 등록 완료. 거래명세표를 보여드릴게요.');
+    showInvoice({ id: docRef.id, productName, price, qty, amount, partnerName: pName, createdAt: new Date() });
+  });
+
+  async function markTransferDone(id) {
+    if (!confirm('창고이동을 완료하셨나요? 완료로 표시하면 알림 목록에서 사라져요.')) return;
+    await db.collection('outbound').doc(id).update({
+      status: 'done', completedAt: firebase.firestore.FieldValue.serverTimestamp(), completedBy: auth.currentUser.email
+    });
+    showToast('창고이동 완료 처리했어요.');
+  }
+
+  /* ============ 거래명세표 ============ */
+  function showInvoice(order) {
+    const c = company || {};
+    const html =
+      '<h1 style="text-align:center; margin-bottom:2px;">거래명세표</h1>' +
+      '<div style="text-align:center; color:var(--ink-soft); font-size:12px; margin-bottom:16px;">' + fmtDateOnly(order.createdAt) + '</div>' +
+      '<table class="invoice-table"><tbody>' +
+      '<tr><th style="width:90px; background:var(--bg);">공급자</th><td>' + escapeHtml(c.name || '(우리 회사 정보 미등록)') + (c.bizNo ? ' · ' + escapeHtml(c.bizNo) : '') + '<br><span style="color:var(--ink-soft); font-size:12px;">' + escapeHtml(c.address || '') + (c.phone ? ' · ' + escapeHtml(c.phone) : '') + '</span></td></tr>' +
+      '<tr><th style="background:var(--bg);">공급받는자</th><td>' + escapeHtml(order.partnerName) + '</td></tr>' +
+      '</tbody></table>' +
+      '<table class="invoice-table"><thead><tr><th>품목</th><th class="num">단가</th><th class="num">수량</th><th class="num">금액</th></tr></thead><tbody>' +
+      '<tr><td>' + escapeHtml(order.productName) + '</td><td class="num">' + fmtMoney(order.price) + '원</td><td class="num">' + order.qty + '</td><td class="num">' + fmtMoney(order.amount) + '원</td></tr>' +
+      '</tbody><tfoot><tr><td colspan="3" style="text-align:right; font-weight:700;">합계</td><td class="num" style="font-weight:700;">' + fmtMoney(order.amount) + '원</td></tr></tfoot></table>';
+    document.getElementById('invoiceContent').innerHTML = html;
+    document.getElementById('invoiceModal').style.display = 'flex';
+  }
+  document.getElementById('invoiceCloseBtn').addEventListener('click', () => {
+    document.getElementById('invoiceModal').style.display = 'none';
+  });
+  document.getElementById('invoicePrintBtn').addEventListener('click', () => window.print());
+
+  /* ============ 렌더링 ============ */
+  function renderPendingBanner() {
+    const pending = outboundList.filter(o => o.status !== 'done');
+    const banner = document.getElementById('pendingTransferBanner');
+    if (!pending.length) { banner.style.display = 'none'; banner.innerHTML = ''; return; }
+    banner.style.display = 'flex';
+    banner.innerHTML =
+      '<span>⚠ 아직 창고이동을 안 한 출고가 ' + pending.length + '건 있어요.</span>' +
+      '<button class="ghost-btn" id="jumpToPendingBtn" style="border-color:var(--red); color:var(--red);">지금 확인하기</button>';
+    document.getElementById('jumpToPendingBtn').addEventListener('click', () => {
+      document.getElementById('outFilterStatus').value = 'pending';
+      document.querySelector('.tab-btn[data-tab="outbound-list"]').click();
+      renderOutboundList();
+    });
+  }
+
+  function renderPartnerList() {
+    const area = document.getElementById('partnerListArea');
+    const list = orderedPartners();
+    if (!list.length) { area.innerHTML = '<div class="empty">아직 등록된 거래처가 없어요.</div>'; return; }
+    let html = '<table><thead><tr><th>거래처명</th><th>사업자번호</th><th>주소</th><th>담당자</th><th>연락처</th><th></th></tr></thead><tbody>';
+    list.forEach(p => {
+      html += '<tr><td class="prod-name">' + escapeHtml(p.name) + '</td><td>' + escapeHtml(p.bizNo||'-') + '</td><td>' + escapeHtml(p.address||'-') + '</td><td>' + escapeHtml(p.contact||'-') + '</td><td>' + escapeHtml(p.phone||'-') + '</td>' +
+        '<td class="row-actions"><button data-edit-partner="' + p.id + '">수정</button> <button data-remove-partner="' + p.id + '">삭제</button></td></tr>';
+    });
+    html += '</tbody></table>';
+    area.innerHTML = html;
+    area.querySelectorAll('[data-edit-partner]').forEach(btn => btn.addEventListener('click', () => editPartner(btn.dataset.editPartner)));
+    area.querySelectorAll('[data-remove-partner]').forEach(btn => btn.addEventListener('click', () => removePartner(btn.dataset.removePartner)));
+  }
+
+  function renderOutboundList() {
+    const area = document.getElementById('outboundListArea');
+    const from = document.getElementById('outFilterFrom').value;
+    const to = document.getElementById('outFilterTo').value;
+    const partnerFilter = document.getElementById('outFilterPartner').value;
+    const statusFilter = document.getElementById('outFilterStatus').value;
+
+    const filtered = outboundList.filter(o => {
+      if (partnerFilter && o.partnerId !== partnerFilter) return false;
+      if (statusFilter && o.status !== statusFilter) return false;
+      if (from || to) {
+        const d = fmtDateOnly(o.createdAt);
+        if (from && d < from) return false;
+        if (to && d > to) return false;
+      }
+      return true;
+    });
+
+    if (!filtered.length) { area.innerHTML = '<div class="empty">해당하는 출고 내역이 없어요.</div>'; return; }
+
+    let html = '<table><thead><tr><th>날짜</th><th>제품명</th><th class="num">단가</th><th class="num">수량</th><th class="num">금액</th><th>거래처</th><th>상태</th><th></th></tr></thead><tbody>';
+    filtered.forEach(o => {
+      html += '<tr><td>' + fmtDateOnly(o.createdAt) + '</td><td class="prod-name">' + escapeHtml(o.productName) + '</td>' +
+        '<td class="num">' + fmtMoney(o.price) + '</td><td class="num">' + o.qty + '</td><td class="num">' + fmtMoney(o.amount) + '</td>' +
+        '<td>' + escapeHtml(o.partnerName) + '</td>' +
+        '<td><span class="status-pill ' + (o.status === 'done' ? 'status-done' : 'status-pending') + '">' + (o.status === 'done' ? '이동완료' : '이동대기') + '</span></td>' +
+        '<td class="row-actions" style="display:flex; gap:6px;">' +
+        '<button data-view-invoice="' + o.id + '">명세표</button>' +
+        (o.status !== 'done' ? '<button data-mark-done="' + o.id + '" style="color:var(--primary-dark);">이동완료</button>' : '') +
+        '</td></tr>';
+    });
+    html += '</tbody></table>';
+    area.innerHTML = html;
+    area.querySelectorAll('[data-view-invoice]').forEach(btn => btn.addEventListener('click', () => {
+      const o = outboundList.find(x => x.id === btn.dataset.viewInvoice);
+      if (o) showInvoice(o);
+    }));
+    area.querySelectorAll('[data-mark-done]').forEach(btn => btn.addEventListener('click', () => markTransferDone(btn.dataset.markDone)));
+  }
+  ['outFilterFrom','outFilterTo','outFilterPartner','outFilterStatus'].forEach(id => {
+    document.getElementById(id).addEventListener('change', renderOutboundList);
+  });
+
+  function renderAll() {
+    refreshPartnerSelects();
+    renderPartnerList();
+    renderOutboundList();
+    renderPendingBanner();
+  }
+
+  /* ============ 탭 전환 ============ */
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.querySelectorAll('.tab-panel').forEach(p => {
+        p.style.display = (p.getAttribute('data-panel') === btn.dataset.tab) ? 'block' : 'none';
+      });
+    });
+  });
+}
+</script>
+</body>
+</html>
