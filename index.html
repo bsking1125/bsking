@@ -894,12 +894,17 @@ function startApp(fbConfig) {
 
     const html =
       '<div class="invoice-sheet">' +
-      '<h1>거래명세표</h1>' +
-      '<div class="sheet-date">' + fmtDateOnly(order.createdAt) + '</div>' +
-      '<table class="doc-table">' +
+      '<div style="display:flex; align-items:flex-start; gap:14px; margin-bottom:4px;">' +
+        '<img src="./company-logo.png" alt="" style="width:60px; height:60px; object-fit:contain; flex:none;" onerror="this.style.display=\'none\'">' +
+        '<div style="flex:1;"><h1 style="margin-top:8px;">거래명세표</h1><div class="sheet-date">' + fmtDateOnly(order.createdAt) + '</div></div>' +
+        '<div style="width:60px; flex:none;"></div>' +
+      '</div>' +
+      '<table class="doc-table" style="position:relative;">' +
         '<tr>' +
           '<td class="vert-label" rowspan="5">공급자</td>' +
-          '<td class="label" style="width:70px;">등록번호</td><td colspan="3">' + escapeHtml(c.bizNo||'-') + '</td>' +
+          '<td class="label" style="width:70px;">등록번호</td><td colspan="3" style="position:relative;">' + escapeHtml(c.bizNo||'-') +
+            '<img src="./company-stamp.png" alt="" style="position:absolute; width:38px; height:38px; top:18px; right:8px; pointer-events:none;" onerror="this.style.display=\'none\'">' +
+          '</td>' +
           '<td class="vert-label" rowspan="5">공급받는자</td>' +
           '<td class="label" style="width:70px;">등록번호</td><td colspan="3">' + escapeHtml(order.partnerBizNo||'-') + '</td>' +
         '</tr>' +
