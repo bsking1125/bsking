@@ -279,9 +279,9 @@
     </div>
     <div class="card" style="margin-bottom:20px;">
       <div class="add-row">
+        <div class="field" style="flex:1; min-width:160px;"><label>바코드</label><input type="text" id="productBarcodeInput"></div>
         <div class="field" style="flex:2; min-width:180px;"><label>품목명 *</label><input type="text" id="productNameInput"></div>
         <div class="field" style="flex:1; min-width:120px;"><label>규격</label><input type="text" id="productSpecInput"></div>
-        <div class="field" style="flex:1; min-width:160px;"><label>바코드</label><input type="text" id="productBarcodeInput"></div>
         <div class="field" style="flex:1; min-width:120px;"><label>박스입수량</label><input type="number" id="productBoxQtyInput" min="0"></div>
       </div>
       <div class="add-row">
@@ -1313,9 +1313,9 @@ function startApp(fbConfig) {
     const area = document.getElementById('productListArea');
     const list = orderedProducts();
     if (!list.length) { area.innerHTML = '<div class="empty">아직 등록된 품목이 없어요.</div>'; return; }
-    let html = '<div class="table-scroll"><table><thead><tr><th>품목명</th><th>규격</th><th>바코드</th><th class="num">박스입수량</th><th class="num">소비자가</th><th class="num">조합원가</th><th class="num">대리점가</th><th class="num">특판대리점가</th><th></th></tr></thead><tbody>';
+    let html = '<div class="table-scroll"><table><thead><tr><th>바코드</th><th>품목명</th><th>규격</th><th class="num">박스입수량</th><th class="num">소비자가</th><th class="num">조합원가</th><th class="num">대리점가</th><th class="num">특판대리점가</th><th></th></tr></thead><tbody>';
     list.forEach(p => {
-      html += '<tr><td class="prod-name">' + escapeHtml(p.name) + '</td><td>' + escapeHtml(p.spec||'-') + '</td><td>' + escapeHtml(p.barcode||'-') + '</td>' +
+      html += '<tr><td>' + escapeHtml(p.barcode||'-') + '</td><td class="prod-name">' + escapeHtml(p.name) + '</td><td>' + escapeHtml(p.spec||'-') + '</td>' +
         '<td class="num">' + (p.unitsPerBox||'-') + '</td>' +
         '<td class="num">' + fmtMoney(p.consumerPrice) + '</td><td class="num">' + fmtMoney(p.memberPrice) + '</td>' +
         '<td class="num">' + fmtMoney(p.distributorPrice) + '</td><td class="num">' + fmtMoney(p.specialDistributorPrice) + '</td>' +
