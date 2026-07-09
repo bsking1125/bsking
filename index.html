@@ -189,6 +189,7 @@
     <button class="tab-btn" data-tab="products">품목 관리</button>
     <button class="tab-btn" data-tab="partners">거래처 관리</button>
     <button class="tab-btn" data-tab="approvals" id="approvalsTabBtn" style="display:none;">가입 승인<span id="pendingCountBadge"></span></button>
+    <button class="tab-btn" data-tab="activitylog" id="activityLogTabBtn" style="display:none;">변경 이력</button>
   </div>
 
   <!-- 가입 승인 (관리자 전용) -->
@@ -197,6 +198,14 @@
       <div><h2>가입 승인</h2><div class="desc">회원가입한 사람이 여기 뜨면 승인해줘야 앱을 쓸 수 있어요.</div></div>
     </div>
     <div id="approvalsListArea"></div>
+  </div>
+
+  <!-- 변경 이력 (관리자 전용) -->
+  <div class="tab-panel" data-panel="activitylog" style="display:none;">
+    <div class="section-head">
+      <div><h2>변경 이력</h2><div class="desc">누가 언제 무엇을 수정·삭제했는지 여기 자동으로 기록돼요.</div></div>
+    </div>
+    <div class="table-scroll" id="activityLogArea"></div>
   </div>
 
   <!-- 출고 등록 -->
@@ -461,6 +470,7 @@ function startApp(fbConfig) {
   // 승인 권한을 가진 이메일들 (여기에 있는 계정은 가입 승인 없이 항상 바로 이용 가능해요)
   const ADMIN_EMAILS = ['qudtjd2222@gmail.com'];
   function isAdminEmail(email) { return !!email && ADMIN_EMAILS.includes(email); }
+  let currentUserIsAdmin = false;
 
   // 자동 로그인: 한 번 로그인하면, 로그아웃하기 전까지는 앱을 다시 열어도 계속 로그인 상태가 유지돼요.
   auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(() => {});
@@ -572,6 +582,8 @@ function startApp(fbConfig) {
     document.getElementById('appWrap').style.display = '';
     document.getElementById('currentUserEmail').textContent = user.email + (admin ? ' (관리자)' : '');
     document.getElementById('approvalsTabBtn').style.display = admin ? '' : 'none';
+    document.getElementById('activityLogTabBtn').style.display = admin ? '' : 'none';
+    currentUserIsAdmin = admin;
     editingOutboundId = null;
     document.getElementById('editModeNotice').style.display = 'none';
     const fromInput = document.getElementById('outFilterFrom');
@@ -692,20 +704,75 @@ function startApp(fbConfig) {
         document.getElementById('companyBankInfoInput').value = company.bankInfo || '';
       }
     }, err => showToast('회사 정보를 불러오지 못했어요: ' + err.message));
+
+    // 관리자만 볼 수 있는 감사 로그 (변경 이력)
+    if (currentUserIsAdmin) {
+      db.collection('activityLog').orderBy('at', 'desc').limit(300).onSnapshot(snap => {
+        activityLogEntries = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        renderActivityLog();
+      }, err => showToast('변경 이력을 불러오지 못했어요: ' + err.message));
+    }
+  }
+
+  /* ============ 변경 이력(감사 로그) ============ */
+  let activityLogEntries = [];
+  const ACTIVITY_TYPE_LABEL = { outbound: '출고', partner: '거래처', product: '품목', company: '회사정보' };
+  const ACTIVITY_ACTION_LABEL = { create: '등록', update: '수정', delete: '삭제', done: '이동완료', undone: '이동취소' };
+
+  async function logActivity(type, action, docId, summary) {
+    try {
+      await db.collection('activityLog').add({
+        type, action, docId, summary,
+        byEmail: auth.currentUser.email,
+        at: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    } catch (e) { /* 로그 기록 실패는 조용히 무시해요 (실제 작업 자체는 이미 끝났으니까요) */ }
+  }
+  // 이전 값 대비 바뀐 필드만 "필드명: 이전값 → 새값" 형태로 요약해요
+  function diffSummary(labels, before, after) {
+    const parts = [];
+    Object.keys(labels).forEach(key => {
+      const b = (before && before[key] !== undefined) ? before[key] : '';
+      const a = (after && after[key] !== undefined) ? after[key] : '';
+      if (String(b) !== String(a)) parts.push(labels[key] + ': ' + (b || '(없음)') + ' → ' + (a || '(없음)'));
+    });
+    return parts.length ? parts.join(' · ') : '(내용 변경 없음)';
+  }
+
+  function renderActivityLog() {
+    const area = document.getElementById('activityLogArea');
+    if (!area) return;
+    if (!activityLogEntries.length) { area.innerHTML = '<div class="empty">아직 기록된 변경 이력이 없어요.</div>'; return; }
+    let html = '<table><thead><tr><th>일시</th><th>작성자</th><th>종류</th><th>동작</th><th>내용</th></tr></thead><tbody>';
+    activityLogEntries.forEach(l => {
+      html += '<tr><td>' + fmtDate(l.at) + '</td><td>' + escapeHtml(l.byEmail || '-') + '</td>' +
+        '<td>' + (ACTIVITY_TYPE_LABEL[l.type] || l.type) + '</td><td>' + (ACTIVITY_ACTION_LABEL[l.action] || l.action) + '</td>' +
+        '<td style="text-align:left; white-space:normal;">' + escapeHtml(l.summary || '') + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    area.innerHTML = html;
   }
 
   /* ============ 우리 회사 정보 ============ */
   document.getElementById('saveCompanyBtn').addEventListener('click', async () => {
+    if (!currentUserIsAdmin) { showToast('회사 정보 수정은 관리자만 할 수 있어요.'); return; }
     const name = document.getElementById('companyNameInput').value.trim();
     if (!name) { showToast('상호를 입력해주세요.'); return; }
-    await db.collection('settings').doc('company').set({
+    const after = {
       name,
       bizNo: document.getElementById('companyBizNoInput').value.trim(),
       ceo: document.getElementById('companyCeoInput').value.trim(),
       address: document.getElementById('companyAddressInput').value.trim(),
       phone: document.getElementById('companyPhoneInput').value.trim(),
       bankInfo: document.getElementById('companyBankInfoInput').value.trim()
-    });
+    };
+    const before = company;
+    await db.collection('settings').doc('company').set(after);
+    const summary = diffSummary(
+      { name: '상호', bizNo: '등록번호', ceo: '대표자', address: '주소', phone: '연락처', bankInfo: '비고' },
+      before, after
+    );
+    logActivity('company', 'update', 'company', summary);
     showToast('우리 회사 정보를 저장했어요.');
   });
 
@@ -726,6 +793,7 @@ function startApp(fbConfig) {
       order: nextOrder(partners),
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
+    logActivity('partner', 'create', null, name + ' 거래처 등록');
     ['partnerNameInput','partnerBizNoInput','partnerCeoInput','partnerAddressInput','partnerContactInput','partnerShipToInput','partnerReceiverInput','partnerReceiverPhoneInput','partnerShipAddressInput'].forEach(id => document.getElementById(id).value = '');
     showToast('"' + name + '" 거래처를 등록했어요.');
   });
@@ -743,14 +811,22 @@ function startApp(fbConfig) {
     const receiver = ask('입고담당자', p.receiver); if (receiver === null) return;
     const receiverPhone = ask('입고담당자 연락처', p.receiverPhone); if (receiverPhone === null) return;
     const shipAddress = ask('배송지 주소', p.shipAddress); if (shipAddress === null) return;
-    await db.collection('partners').doc(id).update({ name: name.trim() || p.name, bizNo, ceo, address, contact, shipTo, receiver, receiverPhone, shipAddress });
+    const after = { name: name.trim() || p.name, bizNo, ceo, address, contact, shipTo, receiver, receiverPhone, shipAddress };
+    await db.collection('partners').doc(id).update(after);
+    const summary = diffSummary(
+      { name: '거래처명', bizNo: '등록번호', ceo: '대표자', address: '주소', contact: '검수자', shipTo: '배송처', receiver: '입고담당자', receiverPhone: '연락처', shipAddress: '배송지주소' },
+      p, after
+    );
+    logActivity('partner', 'update', id, summary);
     showToast('거래처 정보를 수정했어요.');
   }
 
   async function removePartner(id) {
+    if (!currentUserIsAdmin) { showToast('삭제는 관리자만 할 수 있어요.'); return; }
     const name = partnerName(id);
     if (!confirm('"' + name + '" 거래처를 삭제할까요? (이미 등록된 출고 내역은 그대로 남아요)')) return;
     await db.collection('partners').doc(id).delete();
+    logActivity('partner', 'delete', id, name + ' 거래처 삭제');
     showToast('"' + name + '" 거래처를 삭제했어요.');
   }
 
@@ -778,6 +854,7 @@ function startApp(fbConfig) {
       order: nextOrder(productMaster),
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
+    logActivity('product', 'create', null, f.name + ' 품목 등록');
     ['productNameInput','productSpecInput','productBarcodeInput','productBoxQtyInput','productConsumerPriceInput','productMemberPriceInput','productDistPriceInput','productSpecialDistPriceInput'].forEach(id => document.getElementById(id).value = '');
     showToast('"' + f.name + '" 품목을 등록했어요.');
   });
@@ -794,22 +871,30 @@ function startApp(fbConfig) {
     const memberPrice = ask('조합원가', p.memberPrice || 0); if (memberPrice === null) return;
     const distributorPrice = ask('대리점가', p.distributorPrice || 0); if (distributorPrice === null) return;
     const specialDistributorPrice = ask('특판대리점가', p.specialDistributorPrice || 0); if (specialDistributorPrice === null) return;
-    await db.collection('products').doc(id).update({
+    const after = {
       name: name.trim() || p.name, spec, barcode,
       unitsPerBox: Math.round(Number(unitsPerBox)) || 0,
       consumerPrice: parseMoneyInputValue(consumerPrice),
       memberPrice: parseMoneyInputValue(memberPrice),
       distributorPrice: parseMoneyInputValue(distributorPrice),
-      specialDistributorPrice: parseMoneyInputValue(specialDistributorPrice),
-      defaultPrice: parseMoneyInputValue(distributorPrice) || parseMoneyInputValue(consumerPrice) || 0
-    });
+      specialDistributorPrice: parseMoneyInputValue(specialDistributorPrice)
+    };
+    after.defaultPrice = after.distributorPrice || after.consumerPrice || 0;
+    await db.collection('products').doc(id).update(after);
+    const summary = diffSummary(
+      { name: '품목명', spec: '규격', barcode: '바코드', unitsPerBox: '박스입수량', consumerPrice: '소비자가', memberPrice: '조합원가', distributorPrice: '대리점가', specialDistributorPrice: '특판대리점가' },
+      p, after
+    );
+    logActivity('product', 'update', id, summary);
     showToast('품목 정보를 수정했어요.');
   }
 
   async function removeProductMaster(id) {
+    if (!currentUserIsAdmin) { showToast('삭제는 관리자만 할 수 있어요.'); return; }
     const p = productMaster.find(p => p.id === id);
     if (!confirm('"' + (p ? p.name : '') + '" 품목을 삭제할까요?')) return;
     await db.collection('products').doc(id).delete();
+    logActivity('product', 'delete', id, (p ? p.name : '') + ' 품목 삭제');
     showToast('품목을 삭제했어요.');
   }
 
@@ -1215,9 +1300,16 @@ function startApp(fbConfig) {
     };
 
     if (editingOutboundId) {
+      const before = outboundList.find(o => o.id === editingOutboundId);
       await db.collection('outbound').doc(editingOutboundId).update({
         ...order, editedAt: firebase.firestore.FieldValue.serverTimestamp(), editedBy: auth.currentUser.email
       });
+      const summary = diffSummary(
+        { partnerName: '거래처', shipTo: '배송처', shipAddress: '배송지주소', total: '총액' },
+        before ? { ...before, total: fmtMoney(before.total) } : null,
+        { ...order, total: fmtMoney(order.total) }
+      ) + ' (품목 ' + (before ? (before.items||[]).length : '?') + '개 → ' + order.items.length + '개)';
+      logActivity('outbound', 'update', editingOutboundId, summary);
       showToast('출고 내용을 수정했어요.');
       resetRegisterForm();
       document.querySelector('.tab-btn[data-tab="outbound-list"]').click();
@@ -1226,6 +1318,7 @@ function startApp(fbConfig) {
       order.createdAt = firebase.firestore.FieldValue.serverTimestamp();
       order.createdBy = auth.currentUser.email;
       const docRef = await db.collection('outbound').add(order);
+      logActivity('outbound', 'create', docRef.id, partnerInfo.partnerName + ' 앞 · 품목 ' + order.items.length + '개 · 총액 ' + fmtMoney(order.total) + '원');
       lastRegisteredOrder = { id: docRef.id, ...order, createdAt: new Date() };
       const shipToVal = document.getElementById('regShipToInput').value.trim();
       const receiverVal = document.getElementById('regReceiverInput').value.trim();
@@ -1257,6 +1350,7 @@ function startApp(fbConfig) {
             order: nextOrder(partners),
             createdAt: firebase.firestore.FieldValue.serverTimestamp()
           });
+          logActivity('partner', 'create', null, partnerInfo.partnerName + ' 거래처 등록 (출고 등록 중 자동 저장)');
           showToast('"' + partnerInfo.partnerName + '" 거래처로 저장했어요.');
         }
       }
@@ -1271,13 +1365,17 @@ function startApp(fbConfig) {
     await db.collection('outbound').doc(id).update({
       status: 'done', completedAt: firebase.firestore.FieldValue.serverTimestamp(), completedBy: auth.currentUser.email
     });
+    const o = outboundList.find(x => x.id === id);
+    logActivity('outbound', 'done', id, (o ? o.partnerName : '') + ' 앞 출고 창고이동 완료');
     showToast('창고이동 완료 처리했어요.');
   }
 
   async function removeOutbound(id) {
+    if (!currentUserIsAdmin) { showToast('삭제는 관리자만 할 수 있어요.'); return; }
     const o = outboundList.find(x => x.id === id);
     if (!confirm('이 출고 건을 완전히 삭제할까요?\n\n' + (o ? o.partnerName + ' · ' + fmtDateOnly(o.createdAt) : '') + '\n삭제하면 되돌릴 수 없어요.')) return;
     await db.collection('outbound').doc(id).delete();
+    logActivity('outbound', 'delete', id, (o ? o.partnerName + ' · 총액 ' + fmtMoney(o.total) + '원' : ''));
     showToast('출고 건을 삭제했어요.');
   }
 
@@ -1286,6 +1384,8 @@ function startApp(fbConfig) {
     await db.collection('outbound').doc(id).update({
       status: 'pending', completedAt: firebase.firestore.FieldValue.delete(), completedBy: firebase.firestore.FieldValue.delete()
     });
+    const o = outboundList.find(x => x.id === id);
+    logActivity('outbound', 'undone', id, (o ? o.partnerName : '') + ' 앞 출고 창고이동 취소');
     showToast('이동완료를 취소했어요.');
   }
 
@@ -1477,7 +1577,7 @@ function startApp(fbConfig) {
     let html = '<table><thead><tr><th>거래처명</th><th>등록번호</th><th>대표자</th><th>주소</th><th>검수자</th><th></th></tr></thead><tbody>';
     list.forEach(p => {
       html += '<tr><td class="prod-name">' + escapeHtml(p.name) + '</td><td>' + escapeHtml(p.bizNo||'-') + '</td><td>' + escapeHtml(p.ceo||'-') + '</td><td>' + escapeHtml(p.address||'-') + '</td><td>' + escapeHtml(p.contact||'-') + '</td>' +
-        '<td class="row-actions"><button data-edit-partner="' + p.id + '">수정</button> <button data-remove-partner="' + p.id + '">삭제</button></td></tr>';
+        '<td class="row-actions"><button data-edit-partner="' + p.id + '">수정</button>' + (currentUserIsAdmin ? ' <button data-remove-partner="' + p.id + '">삭제</button>' : '') + '</td></tr>';
     });
     html += '</tbody></table>';
     area.innerHTML = html;
@@ -1495,7 +1595,7 @@ function startApp(fbConfig) {
         '<td class="num">' + (p.unitsPerBox||'-') + '</td>' +
         '<td class="num">' + fmtMoney(p.consumerPrice) + '</td><td class="num">' + fmtMoney(p.memberPrice) + '</td>' +
         '<td class="num">' + fmtMoney(p.distributorPrice) + '</td><td class="num">' + fmtMoney(p.specialDistributorPrice) + '</td>' +
-        '<td class="row-actions"><button data-edit-product="' + p.id + '">수정</button> <button data-remove-product="' + p.id + '">삭제</button></td></tr>';
+        '<td class="row-actions"><button data-edit-product="' + p.id + '">수정</button>' + (currentUserIsAdmin ? ' <button data-remove-product="' + p.id + '">삭제</button>' : '') + '</td></tr>';
     });
     html += '</tbody></table></div>';
     area.innerHTML = html;
@@ -1526,16 +1626,19 @@ function startApp(fbConfig) {
     let html = '<table><thead><tr><th>날짜</th><th>거래처</th><th>품목수</th><th class="num">총액</th><th>상태</th><th></th></tr></thead><tbody>';
     filtered.forEach(o => {
       const itemCount = (o.items || []).length;
+      const statusExtra = o.status === 'done' && o.completedBy
+        ? '<div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">' + escapeHtml(o.completedBy) + ' · ' + fmtDate(o.completedAt) + '</div>'
+        : '';
       html += '<tr><td>' + fmtDateOnly(o.createdAt) + '</td><td class="prod-name">' + escapeHtml(o.partnerName) + '</td>' +
         '<td>' + itemCount + '건</td><td class="num">' + fmtMoney(o.total) + '</td>' +
-        '<td><span class="status-pill ' + (o.status === 'done' ? 'status-done' : 'status-pending') + '">' + (o.status === 'done' ? '이동완료' : '이동대기') + '</span></td>' +
-        '<td class="row-actions" style="display:flex; gap:6px;">' +
+        '<td><span class="status-pill ' + (o.status === 'done' ? 'status-done' : 'status-pending') + '">' + (o.status === 'done' ? '이동완료' : '이동대기') + '</span>' + statusExtra + '</td>' +
+        '<td class="row-actions" style="display:flex; gap:6px; justify-content:center;">' +
         '<button data-view-invoice="' + o.id + '">명세표</button>' +
         '<button data-edit-outbound="' + o.id + '">수정</button>' +
         (o.status !== 'done'
           ? '<button data-mark-done="' + o.id + '" style="color:var(--primary-dark);">이동완료</button>'
           : '<button data-unmark-done="' + o.id + '" style="color:var(--red);">이동취소</button>') +
-        '<button data-remove-outbound="' + o.id + '" style="color:var(--red);">삭제</button>' +
+        (currentUserIsAdmin ? '<button data-remove-outbound="' + o.id + '" style="color:var(--red);">삭제</button>' : '') +
         '</td></tr>';
     });
     html += '</tbody></table>';
