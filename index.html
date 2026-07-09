@@ -62,8 +62,8 @@
   .add-row input, .add-row select { flex: 1; min-width: 120px; }
   .qty { max-width: 100px; flex: none !important; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
-  th { color: var(--ink-soft); font-weight: 600; font-size: 12px; }
+  th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: center; white-space: nowrap; font-size: 13px; }
+  th { color: var(--ink-soft); font-weight: 600; }
   td.num, th.num { text-align: right; font-family: var(--mono); }
   .table-scroll { overflow-x: auto; }
   .prod-name { font-weight: 600; }
@@ -74,7 +74,8 @@
   .badge-in { background: var(--primary-tint); color: var(--primary-dark); }
   .badge-out { background: var(--red-tint); color: var(--red); }
   .badge-move { background: var(--amber-tint); color: var(--amber); }
-  .row-actions button { background: none; border: none; color: var(--ink-soft); font-size: 12px; cursor: pointer; }
+  .row-actions { text-align: center; }
+  .row-actions button { background: none; border: none; color: var(--ink-soft); font-size: 13px; font-family: inherit; cursor: pointer; padding: 2px 4px; }
   .row-actions button:hover { color: var(--red); }
   .arrow-btn { cursor: pointer; color: var(--ink-soft); font-size: 9px; padding: 1px; border-radius: 4px; opacity: 0; width: 0; overflow: hidden; display: inline-block; transition: opacity .12s ease, width .12s ease; }
   .arrow-btn:hover { background: var(--primary-tint); color: var(--primary-dark); }
@@ -93,7 +94,7 @@
   .invoice-table { width:100%; border-collapse:collapse; font-size:13px; margin: 14px 0; }
   .invoice-table th, .invoice-table td { border:1px solid var(--line); padding:8px 10px; }
   .doc-table { width:100%; border-collapse:collapse; font-size:12px; margin-bottom:6px; }
-  .doc-table td, .doc-table th { border:1px solid #444; padding:5px 7px; }
+  .doc-table td, .doc-table th { border:1px solid #444; padding:5px 7px; text-align:left; }
   .doc-table th { background:#f0f0f0; font-weight:700; text-align:center; }
   .doc-table td.num, .doc-table th.num { text-align:right; }
   .doc-table .label { background:#f5f5f5; font-weight:600; white-space:nowrap; }
@@ -113,6 +114,7 @@
   .filter-grid input, .filter-grid select { width: 100%; box-sizing: border-box; }
   @media (max-width: 720px) { .filter-grid { grid-template-columns: repeat(2, 1fr); } }
   .money-input { text-align: right; }
+  .search-result-row:hover { background: var(--primary-tint); }
   #itemCartTable th { text-align: center; }
   #itemCartTable td input { font-family: inherit; font-size: 13px; box-sizing: border-box; }
   #itemCartTable { table-layout: fixed; }
@@ -206,7 +208,7 @@
     <div class="card" style="margin-bottom:16px;">
       <div class="field">
         <label>거래처 (공급받는자)</label>
-        <select id="regPartnerSelect"><option value="">거래처 선택</option><option value="__manual__">✏️ 직접 입력 (1회성 거래)</option></select>
+        <select id="regPartnerSelect"><option value="">거래처 선택</option><option value="__manual__">직접 입력</option></select>
       </div>
       <div id="regPartnerInfoCard" style="display:none; font-size:12px; color:var(--ink-soft); background:var(--bg); border-radius:8px; padding:10px 12px; margin-top:-4px; margin-bottom:14px; line-height:1.7;"></div>
 
@@ -960,7 +962,7 @@ function startApp(fbConfig) {
   function refreshPartnerSelects() {
     const list = orderedPartners();
     const selected = document.getElementById('regPartnerSelect').value;
-    const opts = '<option value="">거래처 선택</option><option value="__manual__">✏️ 직접 입력 (1회성 거래)</option>' + list.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
+    const opts = '<option value="">거래처 선택</option><option value="__manual__">직접 입력</option>' + list.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
     document.getElementById('regPartnerSelect').innerHTML = opts;
     document.getElementById('regPartnerSelect').value = selected; // 목록이 갱신돼도 고르고 있던 값 유지
     document.getElementById('outFilterPartner').innerHTML = '<option value="">전체 거래처</option>' + list.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
@@ -1013,7 +1015,6 @@ function startApp(fbConfig) {
     ).join('');
     itemSearchResults.style.display = 'block';
     itemSearchResults.querySelectorAll('[data-pick]').forEach((row, i) => {
-      row.addEventListener('mouseenter', () => { itemSearchActiveIdx = i; renderItemSearchResults(); });
       row.addEventListener('click', () => pickItemSearchResult(i));
     });
   }
@@ -1243,17 +1244,20 @@ function startApp(fbConfig) {
 
       if (isManual) {
         if (confirm('"' + partnerInfo.partnerName + '"을(를) 거래처로 등록해두시겠어요?\n등록해두면 다음에 또 거래할 때 목록에서 바로 고를 수 있어요.')) {
-          document.getElementById('partnerNameInput').value = partnerInfo.partnerName;
-          document.getElementById('partnerBizNoInput').value = partnerInfo.partnerBizNo;
-          document.getElementById('partnerCeoInput').value = partnerInfo.partnerCeo;
-          document.getElementById('partnerAddressInput').value = partnerInfo.partnerAddress;
-          document.getElementById('partnerContactInput').value = partnerInfo.partnerContact;
-          document.getElementById('partnerShipToInput').value = shipToVal;
-          document.getElementById('partnerReceiverInput').value = receiverVal;
-          document.getElementById('partnerReceiverPhoneInput').value = receiverPhoneVal;
-          document.getElementById('partnerShipAddressInput').value = shipAddressVal;
-          document.querySelector('.tab-btn[data-tab="partners"]').click();
-          showToast('내용을 미리 채워놨어요. "거래처 추가" 눌러서 저장해주세요.');
+          await db.collection('partners').add({
+            name: partnerInfo.partnerName,
+            bizNo: partnerInfo.partnerBizNo,
+            ceo: partnerInfo.partnerCeo,
+            address: partnerInfo.partnerAddress,
+            contact: partnerInfo.partnerContact,
+            shipTo: shipToVal,
+            receiver: receiverVal,
+            receiverPhone: receiverPhoneVal,
+            shipAddress: shipAddressVal,
+            order: nextOrder(partners),
+            createdAt: firebase.firestore.FieldValue.serverTimestamp()
+          });
+          showToast('"' + partnerInfo.partnerName + '" 거래처로 저장했어요.');
         }
       }
     }
