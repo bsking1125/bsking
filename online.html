@@ -244,10 +244,22 @@
   <div class="tab-panel" data-panel="stock">
     <div class="section-head">
       <div><h2>현재 총 재고 (미결) - 스토어별</h2><div class="desc">상품별 · 스토어별 누적 미결 수량</div></div>
-      <button class="ghost-btn" id="toggleAddProduct">+ 상품 직접 추가</button>
+      <div style="display:flex; gap:8px;">
+        <button class="ghost-btn" id="toggleMergeStore">스토어 합치기</button>
+        <button class="ghost-btn" id="toggleAddProduct">+ 상품 직접 추가</button>
+      </div>
     </div>
     <div class="add-row" style="margin-top:0; margin-bottom: 12px;">
       <input type="text" id="stockSearchInput" placeholder="상품명으로 검색 (예: 침향원)">
+    </div>
+    <div id="mergeStoreBox" style="display:none; margin-bottom: 14px; background: var(--amber-tint); border:1px solid var(--amber); border-radius:8px; padding:12px;">
+      <div class="desc" style="color:var(--amber); margin-bottom:8px;">예: "스토어"랑 "스마트스토어"가 같은 곳인데 실수로 따로 생겼을 때, 하나로 합쳐요. 합쳐지는 쪽(원본)의 재고가 대상 스토어로 전부 옮겨지고, 원본은 목록에서 사라져요.</div>
+      <div class="add-row">
+        <select id="mergeFromStoreSelect"><option value="">합칠 스토어 (없어질 쪽)</option></select>
+        <span style="color:var(--ink-soft); font-size:13px;">→</span>
+        <select id="mergeToStoreSelect"><option value="">대상 스토어 (남을 쪽)</option></select>
+        <button class="primary-btn" id="mergeStoreBtn">합치기</button>
+      </div>
     </div>
     <div id="addProductBox" style="display:none; margin-bottom: 14px;">
       <div class="add-row">
@@ -734,6 +746,33 @@ function removeStore(store) {
   saveData(); renderAll();
   showToast('"' + store + '" 스토어를 삭제했어요.');
 }
+
+function mergeStores(fromStore, toStore) {
+  if (!fromStore || !toStore) { showToast('두 스토어를 모두 선택해주세요.'); return; }
+  if (fromStore === toStore) { showToast('서로 다른 스토어를 골라주세요.'); return; }
+  const totalQty = Object.values(data.products).reduce((sum, p) => sum + ((p.stores && p.stores[fromStore]) || 0), 0);
+  if (!confirm('"' + fromStore + '"의 재고(총 ' + totalQty + '개)를 전부 "' + toStore + '"로 합칠까요?\n\n"' + fromStore + '"는 목록에서 사라지고, 다시 되돌릴 수 없어요.')) return;
+  const stamp = nowStamp();
+  Object.keys(data.products).forEach(name => {
+    const p = data.products[name];
+    if (!p.stores || !(fromStore in p.stores)) return;
+    const qty = p.stores[fromStore] || 0;
+    delete p.stores[fromStore];
+    if (p.storeDates) delete p.storeDates[fromStore];
+    if (qty > 0) {
+      if (!p.stores) p.stores = {};
+      p.stores[toStore] = (p.stores[toStore] || 0) + qty;
+      p.updatedAt = stamp;
+      data.log.unshift({ date: stamp, type: 'sub', product: name, store: fromStore, qty, resultTotal: totalFor(name), resultStoreQty: 0, source: '스토어 합치기(' + fromStore + '→' + toStore + ')' });
+      data.log.unshift({ date: stamp, type: 'add', product: name, store: toStore, qty, resultTotal: totalFor(name), resultStoreQty: p.stores[toStore], source: '스토어 합치기(' + fromStore + '→' + toStore + ')' });
+    }
+  });
+  if (data.storeOrder) data.storeOrder = data.storeOrder.filter(s => s !== fromStore);
+  if (historyStoreFilter === fromStore) historyStoreFilter = null;
+  saveData(); renderAll();
+  showToast('"' + fromStore + '"를 "' + toStore + '"로 합쳤어요.');
+}
+
 function applyAdditionStoreMap(map, sourceLabel) {
   const stamp = nowStamp();
   Object.entries(map).forEach(([name, storeMap]) => {
@@ -1288,6 +1327,20 @@ document.getElementById('resetAllBtn').addEventListener('click', () => {
 document.getElementById('toggleAddProduct').addEventListener('click', () => {
   const box = document.getElementById('addProductBox');
   box.style.display = box.style.display === 'none' ? 'block' : 'none';
+});
+document.getElementById('toggleMergeStore').addEventListener('click', () => {
+  const box = document.getElementById('mergeStoreBox');
+  const opening = box.style.display === 'none';
+  box.style.display = opening ? 'block' : 'none';
+  if (opening) {
+    const opts = '<option value="">스토어 선택</option>' + allStores().map(s => '<option value="' + s + '">' + s + '</option>').join('');
+    document.getElementById('mergeFromStoreSelect').innerHTML = opts.replace('스토어 선택', '합칠 스토어 (없어질 쪽)');
+    document.getElementById('mergeToStoreSelect').innerHTML = opts.replace('스토어 선택', '대상 스토어 (남을 쪽)');
+  }
+});
+document.getElementById('mergeStoreBtn').addEventListener('click', () => {
+  mergeStores(document.getElementById('mergeFromStoreSelect').value, document.getElementById('mergeToStoreSelect').value);
+  document.getElementById('mergeStoreBox').style.display = 'none';
 });
 document.getElementById('addProductBtn').addEventListener('click', () => {
   addProduct(document.getElementById('newProdName').value, document.getElementById('newProdStore').value, document.getElementById('newProdQty').value);
