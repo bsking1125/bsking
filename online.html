@@ -213,12 +213,7 @@
 
   <div class="backup-bar" style="flex-direction: column; align-items: stretch; gap: 10px;">
     <div style="display:flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap;">
-      <div class="note">구글시트에 연결하면 동료와 같은 데이터를 실시간에 가깝게(20초마다 자동 갱신) 공유할 수 있어요. <span id="cloudStatus" style="font-weight:700;">연결 안 됨</span></div>
-      <div class="btns">
-        <input type="text" id="cloudUrlInput" placeholder="Apps Script 웹 앱 URL 붙여넣기" style="min-width:260px; padding:6px 10px; border:1px solid var(--line); border-radius:7px; font-size:12px;">
-        <button class="ghost-btn" id="connectCloudBtn">연결</button>
-        <button class="ghost-btn" id="syncNowBtn">지금 동기화</button>
-      </div>
+      <div class="note">이제 Firebase로 실시간 동기화돼요 — 팀원이 입력하면 바로 반영돼요. <span style="font-weight:700; color:var(--primary-dark);">자동 연결됨</span></div>
     </div>
   </div>
 
@@ -504,6 +499,7 @@ function enterOnlineApp(user) {
   document.getElementById('loginGate').style.display = 'none';
   document.getElementById('appWrap').style.display = '';
   document.getElementById('currentUserEmailOnline').textContent = user.email + (isAdminEmail(user.email) ? ' (관리자)' : '');
+  startFirestoreSync();
 }
 
 const STORAGE_KEY = 'pending_stock_v2';
@@ -574,7 +570,6 @@ function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 }
 
-let CLOUD_URL = localStorage.getItem('cloud_script_url') || '';
 
 function normalizeData(parsed) {
   return {
@@ -586,34 +581,23 @@ function normalizeData(parsed) {
     storeOrder: parsed.storeOrder || []
   };
 }
-function updateCloudStatus() {
-  const el = document.getElementById('cloudStatus');
-  if (!el) return;
-  el.textContent = CLOUD_URL ? '연결됨' : '연결 안 됨';
-  el.style.color = CLOUD_URL ? 'var(--primary-dark)' : 'var(--ink-soft)';
-}
-async function cloudFetch() {
-  if (!CLOUD_URL) return null;
-  try {
-    const res = await fetch(CLOUD_URL, { method: 'GET' });
-    const text = await res.text();
-    const parsed = JSON.parse(text);
-    return normalizeData(parsed);
-  } catch (e) {
-    return null;
-  }
-}
-async function cloudPush() {
-  if (!CLOUD_URL) return;
-  try {
-    await fetch(CLOUD_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(data)
-    });
-  } catch (e) {
-    showToast('클라우드 저장에 실패했어요. 인터넷 연결을 확인해주세요.');
-  }
+let firestoreSyncStarted = false;
+function startFirestoreSync() {
+  if (firestoreSyncStarted) return;
+  firestoreSyncStarted = true;
+  db.collection('onlineInventory').doc('data').onSnapshot(doc => {
+    if (doc.exists) {
+      data = normalizeData(doc.data());
+      const migrated = migrateLogIfNeeded();
+      loaded = true;
+      renderAll();
+      if (migrated) saveData();
+    } else {
+      // 아직 Firebase 쪽에 데이터가 없어요 — "데이터 불러오기"로 예전 백업 파일을 올리면 그게 여기 첫 데이터가 돼요.
+      loaded = true;
+      renderAll();
+    }
+  }, err => showToast('실시간 동기화 연결에 실패했어요: ' + err.message));
 }
 
 function migrateLogIfNeeded() {
@@ -633,40 +617,22 @@ function migrateLogIfNeeded() {
 }
 
 async function loadData() {
+  // 로그인 전에도 화면이 아예 비어있지 않도록, 이 브라우저에 예전에 저장해둔 캐시가 있으면 우선 보여줘요.
+  // 로그인하고 나면 startFirestoreSync()가 진짜 데이터(Firebase)로 덮어써요.
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      data = normalizeData(JSON.parse(raw));
-    }
-  } catch (e) { /* no local data yet */ }
-
-  if (CLOUD_URL) {
-    const remote = await cloudFetch();
-    if (remote) data = remote;
-  }
-  const migrated = migrateLogIfNeeded();
+    if (raw) data = normalizeData(JSON.parse(raw));
+  } catch (e) { /* no local cache yet */ }
   loaded = true;
   renderAll();
-  if (migrated) saveData();
-
-  if (CLOUD_URL) {
-    setInterval(async () => {
-      const remote = await cloudFetch();
-      if (remote) {
-        data = remote;
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-        renderAll();
-      }
-    }, 20000);
-  }
 }
 async function saveData() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (e) { /* 캐시 저장 실패는 무시, Firebase가 진짜 저장소예요 */ }
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    await db.collection('onlineInventory').doc('data').set(data);
   } catch (e) {
-    showToast('브라우저 저장에 실패했어요. 꼭 "데이터 저장" 버튼으로 백업해주세요.');
+    showToast('저장에 실패했어요. 인터넷 연결을 확인해주세요. (' + e.message + ')');
   }
-  if (CLOUD_URL) cloudPush();
 }
 
 function totalFor(name) {
@@ -1868,35 +1834,6 @@ document.getElementById('cancelUploadBtn').addEventListener('click', () => {
   showToast('업로드를 취소했어요.');
 });
 
-document.getElementById('connectCloudBtn').addEventListener('click', async () => {
-  const url = document.getElementById('cloudUrlInput').value.trim();
-  if (!url) { showToast('URL을 입력해주세요.'); return; }
-  localStorage.setItem('cloud_script_url', url);
-  CLOUD_URL = url;
-  updateCloudStatus();
-  showToast('연결을 시도하고 있어요...');
-  const remote = await cloudFetch();
-  if (remote) {
-    data = remote;
-    saveData();
-    renderAll();
-    showToast('연결되고 데이터를 불러왔어요.');
-  } else {
-    showToast('연결에 실패했어요. URL과 배포 설정(모든 사용자 접근)을 확인해주세요.');
-  }
-});
-document.getElementById('syncNowBtn').addEventListener('click', async () => {
-  if (!CLOUD_URL) { showToast('먼저 구글시트에 연결해주세요.'); return; }
-  const remote = await cloudFetch();
-  if (remote) {
-    data = remote;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-    renderAll();
-    showToast('최신 데이터로 갱신했어요.');
-  } else {
-    showToast('동기화에 실패했어요.');
-  }
-});
 document.getElementById('exportBtn').addEventListener('click', () => {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
@@ -1930,9 +1867,6 @@ document.getElementById('importFileInput').addEventListener('change', e => {
   reader.readAsText(file);
   e.target.value = '';
 });
-
-document.getElementById('cloudUrlInput').value = CLOUD_URL;
-updateCloudStatus();
 
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
