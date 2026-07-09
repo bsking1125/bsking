@@ -113,6 +113,8 @@
   .filter-grid input, .filter-grid select { width: 100%; box-sizing: border-box; }
   @media (max-width: 720px) { .filter-grid { grid-template-columns: repeat(2, 1fr); } }
   .money-input { text-align: right; }
+  #itemCartTable th { text-align: center; }
+  #itemCartTable td input { font-family: inherit; font-size: 13px; box-sizing: border-box; }
 </style>
 </head>
 <body>
@@ -225,7 +227,7 @@
 
     <div class="table-scroll" style="margin-bottom:10px;">
       <table id="itemCartTable">
-        <thead><tr><th>품목명</th><th>규격</th><th class="num">수량</th><th class="num">단가</th><th class="num">금액</th><th>비고</th><th></th></tr></thead>
+        <thead><tr><th>품목명</th><th style="width:90px;">규격</th><th class="num" style="width:80px;">수량</th><th class="num" style="width:100px;">단가</th><th class="num" style="width:100px;">금액</th><th style="width:120px;">비고</th><th style="width:50px;"></th></tr></thead>
         <tbody id="itemCartBody"><tr><td colspan="7" class="empty">위에서 검색해서 품목을 담아주세요.</td></tr></tbody>
       </table>
     </div>
@@ -1007,22 +1009,44 @@ function startApp(fbConfig) {
     let html = '';
     cartItems.forEach((it, idx) => {
       const amount = (it.price || 0) * (it.qty || 0);
-      html += '<tr>' +
+      html += '<tr data-row="' + idx + '">' +
         '<td class="prod-name">' + escapeHtml(it.name) + '</td>' +
         '<td>' + escapeHtml(it.spec) + '</td>' +
-        '<td class="num"><input type="number" min="1" value="' + it.qty + '" data-cart-qty="' + idx + '" style="width:70px; text-align:right;"></td>' +
-        '<td class="num"><input type="text" inputmode="numeric" class="money-input" value="' + formatMoneyInputValue(it.price) + '" data-cart-price="' + idx + '" style="width:90px;"></td>' +
-        '<td class="num">' + fmtMoney(amount) + '</td>' +
-        '<td><input type="text" value="' + escapeHtml(it.note) + '" data-cart-note="' + idx + '" style="width:90px;"></td>' +
+        '<td class="num"><input type="number" min="1" value="' + it.qty + '" data-cart-qty="' + idx + '" style="width:100%;"></td>' +
+        '<td class="num"><input type="text" inputmode="numeric" class="money-input" value="' + formatMoneyInputValue(it.price) + '" data-cart-price="' + idx + '" style="width:100%;"></td>' +
+        '<td class="num" data-amount-cell>' + fmtMoney(amount) + '</td>' +
+        '<td><input type="text" value="' + escapeHtml(it.note) + '" data-cart-note="' + idx + '" style="width:100%;"></td>' +
         '<td class="row-actions"><button data-cart-remove="' + idx + '">삭제</button></td>' +
         '</tr>';
     });
     body.innerHTML = html;
-    body.querySelectorAll('[data-cart-price]').forEach(inp => inp.addEventListener('input', () => { cartItems[+inp.dataset.cartPrice].price = parseMoneyInputValue(inp.value); renderCart(); }));
-    body.querySelectorAll('[data-cart-qty]').forEach(inp => inp.addEventListener('input', () => { cartItems[+inp.dataset.cartQty].qty = Math.round(Number(inp.value)) || 0; renderCart(); }));
+    // 단가/수량은 키보드로 한 글자씩 칠 때마다 표 전체를 다시 그리면 입력창 포커스(커서)가 날아가요.
+    // 그래서 그 줄의 금액 칸이랑 아래 총액만 콕 집어 업데이트하고, 입력창 자체는 안 건드려요.
+    body.querySelectorAll('[data-cart-price]').forEach(inp => inp.addEventListener('input', () => {
+      const cursorFromEnd = inp.value.length - inp.selectionStart;
+      inp.value = formatMoneyInputValue(inp.value);
+      const pos = Math.max(0, inp.value.length - cursorFromEnd);
+      inp.setSelectionRange(pos, pos);
+      cartItems[+inp.dataset.cartPrice].price = parseMoneyInputValue(inp.value);
+      updateCartRowAmount(+inp.dataset.cartPrice);
+    }));
+    body.querySelectorAll('[data-cart-qty]').forEach(inp => inp.addEventListener('input', () => {
+      cartItems[+inp.dataset.cartQty].qty = Math.round(Number(inp.value)) || 0;
+      updateCartRowAmount(+inp.dataset.cartQty);
+    }));
     body.querySelectorAll('[data-cart-note]').forEach(inp => inp.addEventListener('input', () => { cartItems[+inp.dataset.cartNote].note = inp.value; }));
     body.querySelectorAll('[data-cart-remove]').forEach(btn => btn.addEventListener('click', () => { cartItems.splice(+btn.dataset.cartRemove, 1); renderCart(); }));
 
+    refreshCartTotalsArea();
+  }
+  function updateCartRowAmount(idx) {
+    const it = cartItems[idx];
+    const amount = (it.price || 0) * (it.qty || 0);
+    const row = document.querySelector('#itemCartBody tr[data-row="' + idx + '"]');
+    if (row) { const cell = row.querySelector('[data-amount-cell]'); if (cell) cell.textContent = fmtMoney(amount); }
+    refreshCartTotalsArea();
+  }
+  function refreshCartTotalsArea() {
     // 원본 엑셀 양식 계산식을 그대로 따라요: 입력한 단가는 "부가세 포함" 금액이고,
     // 공급가액/부가세는 그 합계를 1.1로 나눠서 거꾸로 계산해요.
     const totals = computeTotals(cartItems);
