@@ -108,6 +108,11 @@
     #invoicePrintBtn, #invoiceCloseBtn, #invoiceExcelBtn { display:none !important; }
   }
   .filter-bar button.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .filter-grid { display:grid; grid-template-columns: repeat(4, 1fr); gap: 12px; align-items: end; }
+  .filter-grid .field { min-width: 0; }
+  .filter-grid input, .filter-grid select { width: 100%; box-sizing: border-box; }
+  @media (max-width: 720px) { .filter-grid { grid-template-columns: repeat(2, 1fr); } }
+  .money-input { text-align: right; }
 </style>
 </head>
 <body>
@@ -243,11 +248,11 @@
     <div class="section-head">
       <div><h2>출고 내역</h2><div class="desc">날짜 · 거래처 · 상태로 필터해서 볼 수 있어요.</div></div>
     </div>
-    <div class="add-row" style="margin-bottom:14px;">
-      <div class="field" style="flex:1; min-width:140px;"><label>시작일</label><input type="date" id="outFilterFrom"></div>
-      <div class="field" style="flex:1; min-width:140px;"><label>종료일</label><input type="date" id="outFilterTo"></div>
-      <div class="field" style="flex:1; min-width:160px;"><label>거래처</label><select id="outFilterPartner"><option value="">전체 거래처</option></select></div>
-      <div class="field" style="flex:1; min-width:140px;"><label>상태</label>
+    <div class="filter-grid" style="margin-bottom:14px;">
+      <div class="field"><label>시작일</label><input type="date" id="outFilterFrom"></div>
+      <div class="field"><label>종료일</label><input type="date" id="outFilterTo"></div>
+      <div class="field"><label>거래처</label><select id="outFilterPartner"><option value="">전체 거래처</option></select></div>
+      <div class="field"><label>상태</label>
         <select id="outFilterStatus">
           <option value="">전체</option>
           <option value="pending">창고이동 대기중</option>
@@ -263,11 +268,11 @@
     <div class="section-head">
       <div><h2>전체 품목 기록</h2><div class="desc">창고이동이 끝난 품목만 여기 쌓여요. 매출처리 누르면 목록에서 빠져요 (헷갈리지 않게요).</div></div>
     </div>
-    <div class="add-row" style="margin-bottom:14px;">
-      <div class="field" style="flex:1; min-width:140px;"><label>시작일</label><input type="date" id="ledgerFilterFrom"></div>
-      <div class="field" style="flex:1; min-width:140px;"><label>종료일</label><input type="date" id="ledgerFilterTo"></div>
-      <div class="field" style="flex:1; min-width:160px;"><label>거래처</label><select id="ledgerFilterPartner"><option value="">전체 거래처</option></select></div>
-      <div class="field" style="flex:1; min-width:160px;"><label>품목명 검색</label><input type="text" id="ledgerFilterProduct" placeholder="품목명 일부 입력"></div>
+    <div class="filter-grid" style="margin-bottom:14px;">
+      <div class="field"><label>시작일</label><input type="date" id="ledgerFilterFrom"></div>
+      <div class="field"><label>종료일</label><input type="date" id="ledgerFilterTo"></div>
+      <div class="field"><label>거래처</label><select id="ledgerFilterPartner"><option value="">전체 거래처</option></select></div>
+      <div class="field"><label>품목명 검색</label><input type="text" id="ledgerFilterProduct" placeholder="품목명 일부 입력"></div>
     </div>
     <div class="table-scroll" id="ledgerArea"></div>
   </div>
@@ -285,10 +290,10 @@
         <div class="field" style="flex:1; min-width:120px;"><label>박스입수량</label><input type="number" id="productBoxQtyInput" min="0"></div>
       </div>
       <div class="add-row">
-        <div class="field" style="flex:1; min-width:120px;"><label>소비자가</label><input type="number" id="productConsumerPriceInput" min="0"></div>
-        <div class="field" style="flex:1; min-width:120px;"><label>조합원가</label><input type="number" id="productMemberPriceInput" min="0"></div>
-        <div class="field" style="flex:1; min-width:120px;"><label>대리점가</label><input type="number" id="productDistPriceInput" min="0"></div>
-        <div class="field" style="flex:1; min-width:120px;"><label>특판대리점가</label><input type="number" id="productSpecialDistPriceInput" min="0"></div>
+        <div class="field" style="flex:1; min-width:120px;"><label>소비자가</label><input type="text" inputmode="numeric" class="money-input" id="productConsumerPriceInput"></div>
+        <div class="field" style="flex:1; min-width:120px;"><label>조합원가</label><input type="text" inputmode="numeric" class="money-input" id="productMemberPriceInput"></div>
+        <div class="field" style="flex:1; min-width:120px;"><label>대리점가</label><input type="text" inputmode="numeric" class="money-input" id="productDistPriceInput"></div>
+        <div class="field" style="flex:1; min-width:120px;"><label>특판대리점가</label><input type="text" inputmode="numeric" class="money-input" id="productSpecialDistPriceInput"></div>
       </div>
       <button class="primary-btn" id="addProductMasterBtn">품목 추가</button>
     </div>
@@ -609,6 +614,21 @@ function startApp(fbConfig) {
   function orderedProducts() { return [...productMaster].sort((a,b) => (a.order||0) - (b.order||0)); }
   function partnerName(id) { const p = partners.find(p => p.id === id); return p ? p.name : '(삭제된 거래처)'; }
   function fmtMoney(n) { return Math.round(n || 0).toLocaleString('ko-KR'); }
+  function formatMoneyInputValue(v) {
+    const digits = String(v == null ? '' : v).replace(/[^\d]/g, '');
+    return digits ? Number(digits).toLocaleString('ko-KR') : '';
+  }
+  function parseMoneyInputValue(v) {
+    return Math.round(Number(String(v == null ? '' : v).replace(/[^\d]/g, ''))) || 0;
+  }
+  function attachMoneyInputFormatting(input) {
+    input.addEventListener('input', () => {
+      const cursorFromEnd = input.value.length - input.selectionStart;
+      input.value = formatMoneyInputValue(input.value);
+      const pos = Math.max(0, input.value.length - cursorFromEnd);
+      input.setSelectionRange(pos, pos);
+    });
+  }
   function fmtDateOnly(ts) {
     if (!ts) return '';
     const d = ts.toDate ? ts.toDate() : new Date(ts);
@@ -720,12 +740,15 @@ function startApp(fbConfig) {
       spec: document.getElementById('productSpecInput').value.trim(),
       barcode: document.getElementById('productBarcodeInput').value.trim(),
       unitsPerBox: Math.round(Number(document.getElementById('productBoxQtyInput').value)) || 0,
-      consumerPrice: Math.round(Number(document.getElementById('productConsumerPriceInput').value)) || 0,
-      memberPrice: Math.round(Number(document.getElementById('productMemberPriceInput').value)) || 0,
-      distributorPrice: Math.round(Number(document.getElementById('productDistPriceInput').value)) || 0,
-      specialDistributorPrice: Math.round(Number(document.getElementById('productSpecialDistPriceInput').value)) || 0
+      consumerPrice: parseMoneyInputValue(document.getElementById('productConsumerPriceInput').value),
+      memberPrice: parseMoneyInputValue(document.getElementById('productMemberPriceInput').value),
+      distributorPrice: parseMoneyInputValue(document.getElementById('productDistPriceInput').value),
+      specialDistributorPrice: parseMoneyInputValue(document.getElementById('productSpecialDistPriceInput').value)
     };
   }
+  ['productConsumerPriceInput','productMemberPriceInput','productDistPriceInput','productSpecialDistPriceInput'].forEach(id => {
+    attachMoneyInputFormatting(document.getElementById(id));
+  });
   document.getElementById('addProductMasterBtn').addEventListener('click', async () => {
     const f = readProductFormFields();
     if (!f.name) { showToast('품목명을 입력해주세요.'); return; }
@@ -753,11 +776,11 @@ function startApp(fbConfig) {
     await db.collection('products').doc(id).update({
       name: name.trim() || p.name, spec, barcode,
       unitsPerBox: Math.round(Number(unitsPerBox)) || 0,
-      consumerPrice: Math.round(Number(consumerPrice)) || 0,
-      memberPrice: Math.round(Number(memberPrice)) || 0,
-      distributorPrice: Math.round(Number(distributorPrice)) || 0,
-      specialDistributorPrice: Math.round(Number(specialDistributorPrice)) || 0,
-      defaultPrice: Math.round(Number(distributorPrice)) || Math.round(Number(consumerPrice)) || 0
+      consumerPrice: parseMoneyInputValue(consumerPrice),
+      memberPrice: parseMoneyInputValue(memberPrice),
+      distributorPrice: parseMoneyInputValue(distributorPrice),
+      specialDistributorPrice: parseMoneyInputValue(specialDistributorPrice),
+      defaultPrice: parseMoneyInputValue(distributorPrice) || parseMoneyInputValue(consumerPrice) || 0
     });
     showToast('품목 정보를 수정했어요.');
   }
@@ -988,14 +1011,14 @@ function startApp(fbConfig) {
         '<td class="prod-name">' + escapeHtml(it.name) + '</td>' +
         '<td>' + escapeHtml(it.spec) + '</td>' +
         '<td class="num"><input type="number" min="1" value="' + it.qty + '" data-cart-qty="' + idx + '" style="width:70px; text-align:right;"></td>' +
-        '<td class="num"><input type="number" min="0" value="' + it.price + '" data-cart-price="' + idx + '" style="width:90px; text-align:right;"></td>' +
+        '<td class="num"><input type="text" inputmode="numeric" class="money-input" value="' + formatMoneyInputValue(it.price) + '" data-cart-price="' + idx + '" style="width:90px;"></td>' +
         '<td class="num">' + fmtMoney(amount) + '</td>' +
         '<td><input type="text" value="' + escapeHtml(it.note) + '" data-cart-note="' + idx + '" style="width:90px;"></td>' +
         '<td class="row-actions"><button data-cart-remove="' + idx + '">삭제</button></td>' +
         '</tr>';
     });
     body.innerHTML = html;
-    body.querySelectorAll('[data-cart-price]').forEach(inp => inp.addEventListener('input', () => { cartItems[+inp.dataset.cartPrice].price = Math.round(Number(inp.value)) || 0; renderCart(); }));
+    body.querySelectorAll('[data-cart-price]').forEach(inp => inp.addEventListener('input', () => { cartItems[+inp.dataset.cartPrice].price = parseMoneyInputValue(inp.value); renderCart(); }));
     body.querySelectorAll('[data-cart-qty]').forEach(inp => inp.addEventListener('input', () => { cartItems[+inp.dataset.cartQty].qty = Math.round(Number(inp.value)) || 0; renderCart(); }));
     body.querySelectorAll('[data-cart-note]').forEach(inp => inp.addEventListener('input', () => { cartItems[+inp.dataset.cartNote].note = inp.value; }));
     body.querySelectorAll('[data-cart-remove]').forEach(btn => btn.addEventListener('click', () => { cartItems.splice(+btn.dataset.cartRemove, 1); renderCart(); }));
