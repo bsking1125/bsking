@@ -557,6 +557,8 @@ function startApp(fbConfig) {
     document.getElementById('appWrap').style.display = '';
     document.getElementById('currentUserEmail').textContent = user.email + (admin ? ' (관리자)' : '');
     document.getElementById('approvalsTabBtn').style.display = admin ? '' : 'none';
+    editingOutboundId = null;
+    document.getElementById('editModeNotice').style.display = 'none';
     const fromInput = document.getElementById('outFilterFrom');
     const toInput = document.getElementById('outFilterTo');
     if (!fromInput.value && !toInput.value) {
@@ -1005,9 +1007,16 @@ function startApp(fbConfig) {
     const q = itemSearchInput.value.trim().toLowerCase();
     itemSearchActiveIdx = -1;
     if (!q) { itemSearchResults.style.display = 'none'; itemSearchResults.innerHTML = ''; itemSearchMatches = []; return; }
-    itemSearchMatches = orderedProducts().filter(p =>
-      (p.name || '').toLowerCase().includes(q) || (p.barcode || '').toLowerCase().includes(q)
-    ).slice(0, 8);
+    const clean = s => (s || '').toLowerCase().replace(/\s+/g, '');
+    itemSearchMatches = orderedProducts()
+      .filter(p => clean(p.name).includes(q) || clean(p.barcode).includes(q))
+      // 바코드 끝자리로 검색하는 경우가 많아서(예: 0628), 바코드가 그 숫자로 "끝나는" 품목을 맨 위로 올려줘요
+      .sort((a, b) => {
+        const aEnds = clean(a.barcode).endsWith(q) ? 0 : 1;
+        const bEnds = clean(b.barcode).endsWith(q) ? 0 : 1;
+        return aEnds - bEnds;
+      })
+      .slice(0, 8);
     renderItemSearchResults();
   });
 
@@ -1048,12 +1057,12 @@ function startApp(fbConfig) {
     cartItems.forEach((it, idx) => {
       const amount = (it.price || 0) * (it.qty || 0);
       html += '<tr data-row="' + idx + '">' +
-        '<td class="prod-name">' + escapeHtml(it.name) + '</td>' +
-        '<td>' + escapeHtml(it.spec) + '</td>' +
+        '<td class="prod-name" style="text-align:center;">' + escapeHtml(it.name) + '</td>' +
+        '<td style="text-align:center;">' + escapeHtml(it.spec) + '</td>' +
         '<td class="num"><input type="number" min="1" value="' + it.qty + '" data-cart-qty="' + idx + '" style="width:100%;"></td>' +
         '<td class="num"><input type="text" inputmode="numeric" class="money-input" value="' + formatMoneyInputValue(it.price) + '" data-cart-price="' + idx + '" style="width:100%;"></td>' +
         '<td class="num" data-amount-cell>' + fmtMoney(amount) + '</td>' +
-        '<td><input type="text" value="' + escapeHtml(it.note) + '" data-cart-note="' + idx + '" style="width:100%;"></td>' +
+        '<td style="text-align:center;"><input type="text" value="' + escapeHtml(it.note) + '" data-cart-note="' + idx + '" style="width:100%; text-align:center;"></td>' +
         '<td class="row-actions"><button data-cart-remove="' + idx + '">삭제</button></td>' +
         '</tr>';
     });
