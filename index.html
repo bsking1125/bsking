@@ -281,13 +281,49 @@
       <div class="add-row">
         <div class="field" style="flex:2; min-width:180px;"><label>품목명 *</label><input type="text" id="productNameInput"></div>
         <div class="field" style="flex:1; min-width:120px;"><label>규격</label><input type="text" id="productSpecInput"></div>
+        <div class="field" style="flex:1; min-width:160px;"><label>바코드</label><input type="text" id="productBarcodeInput"></div>
+        <div class="field" style="flex:1; min-width:120px;"><label>박스입수량</label><input type="number" id="productBoxQtyInput" min="0"></div>
       </div>
       <div class="add-row">
-        <div class="field" style="flex:1; min-width:160px;"><label>바코드</label><input type="text" id="productBarcodeInput"></div>
-        <div class="field" style="flex:1; min-width:140px;"><label>기본 단가</label><input type="number" id="productPriceInput" min="0"></div>
+        <div class="field" style="flex:1; min-width:120px;"><label>소비자가</label><input type="number" id="productConsumerPriceInput" min="0"></div>
+        <div class="field" style="flex:1; min-width:120px;"><label>조합원가</label><input type="number" id="productMemberPriceInput" min="0"></div>
+        <div class="field" style="flex:1; min-width:120px;"><label>대리점가</label><input type="number" id="productDistPriceInput" min="0"></div>
+        <div class="field" style="flex:1; min-width:120px;"><label>특판대리점가</label><input type="number" id="productSpecialDistPriceInput" min="0"></div>
       </div>
       <button class="primary-btn" id="addProductMasterBtn">품목 추가</button>
     </div>
+
+    <div class="section-head"><div><h2 style="font-size:14px;">엑셀로 한 번에 등록</h2><div class="desc">파일을 올리면 미리보기가 뜨고, 어느 열에 뭐가 있는지 직접 숫자로 지정해요 (1열, 2열...). 자동으로 짐작한 값이 미리 채워지지만 꼭 확인해주세요.</div></div></div>
+    <div class="card" style="margin-bottom:20px;">
+      <input type="file" id="productExcelInput" accept=".xlsx,.xls">
+      <div id="productExcelRawPreview" style="margin-top:12px;"></div>
+
+      <div id="productExcelMappingArea" style="display:none; margin-top:14px;">
+        <div class="desc" style="margin-bottom:8px;">각 항목이 몇 번째 열에 있는지 숫자로 입력해주세요 (없으면 0 또는 비워두세요).</div>
+        <div class="add-row">
+          <div class="field" style="flex:1; min-width:100px;"><label>바코드 = 몇 열?</label><input type="number" id="mapColBarcode" min="0"></div>
+          <div class="field" style="flex:1; min-width:100px;"><label>품명 = 몇 열?</label><input type="number" id="mapColName" min="0"></div>
+          <div class="field" style="flex:1; min-width:100px;"><label>규격 = 몇 열?</label><input type="number" id="mapColSpec" min="0"></div>
+          <div class="field" style="flex:1; min-width:100px;"><label>박스입수량 = 몇 열?</label><input type="number" id="mapColBox" min="0"></div>
+        </div>
+        <div class="add-row">
+          <div class="field" style="flex:1; min-width:100px;"><label>소비자가 = 몇 열?</label><input type="number" id="mapColConsumer" min="0"></div>
+          <div class="field" style="flex:1; min-width:100px;"><label>조합원가 = 몇 열?</label><input type="number" id="mapColMember" min="0"></div>
+          <div class="field" style="flex:1; min-width:100px;"><label>대리점가 = 몇 열?</label><input type="number" id="mapColDist" min="0"></div>
+          <div class="field" style="flex:1; min-width:100px;"><label>특판대리점가 = 몇 열?</label><input type="number" id="mapColSpecialDist" min="0"></div>
+        </div>
+        <div class="add-row">
+          <div class="field" style="flex:1; min-width:100px;"><label>첫 줄은 헤더(제목)인가요?</label>
+            <select id="mapHasHeader"><option value="yes">예, 첫 줄은 제외</option><option value="no">아니오, 첫 줄부터 데이터</option></select>
+          </div>
+        </div>
+        <button class="ghost-btn" id="productExcelBuildPreviewBtn">이 설정으로 미리보기 만들기</button>
+      </div>
+
+      <div id="productExcelPreviewArea" style="margin-top:12px;"></div>
+      <button class="primary-btn" id="productExcelUploadBtn" style="display:none; margin-top:10px;">이 내용대로 일괄 등록</button>
+    </div>
+
     <div id="productListArea"></div>
   </div>
 
@@ -675,29 +711,51 @@ function startApp(fbConfig) {
   }
 
   /* ============ 품목 마스터 관리 ============ */
-  document.getElementById('addProductMasterBtn').addEventListener('click', async () => {
-    const name = document.getElementById('productNameInput').value.trim();
-    if (!name) { showToast('품목명을 입력해주세요.'); return; }
-    await db.collection('products').add({
-      name,
+  function readProductFormFields() {
+    return {
+      name: document.getElementById('productNameInput').value.trim(),
       spec: document.getElementById('productSpecInput').value.trim(),
       barcode: document.getElementById('productBarcodeInput').value.trim(),
-      defaultPrice: Math.round(Number(document.getElementById('productPriceInput').value)) || 0,
+      unitsPerBox: Math.round(Number(document.getElementById('productBoxQtyInput').value)) || 0,
+      consumerPrice: Math.round(Number(document.getElementById('productConsumerPriceInput').value)) || 0,
+      memberPrice: Math.round(Number(document.getElementById('productMemberPriceInput').value)) || 0,
+      distributorPrice: Math.round(Number(document.getElementById('productDistPriceInput').value)) || 0,
+      specialDistributorPrice: Math.round(Number(document.getElementById('productSpecialDistPriceInput').value)) || 0
+    };
+  }
+  document.getElementById('addProductMasterBtn').addEventListener('click', async () => {
+    const f = readProductFormFields();
+    if (!f.name) { showToast('품목명을 입력해주세요.'); return; }
+    await db.collection('products').add({
+      ...f, defaultPrice: f.distributorPrice || f.consumerPrice || 0,
       order: nextOrder(productMaster),
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
-    ['productNameInput','productSpecInput','productBarcodeInput','productPriceInput'].forEach(id => document.getElementById(id).value = '');
-    showToast('"' + name + '" 품목을 등록했어요.');
+    ['productNameInput','productSpecInput','productBarcodeInput','productBoxQtyInput','productConsumerPriceInput','productMemberPriceInput','productDistPriceInput','productSpecialDistPriceInput'].forEach(id => document.getElementById(id).value = '');
+    showToast('"' + f.name + '" 품목을 등록했어요.');
   });
 
   async function editProductMaster(id) {
     const p = productMaster.find(p => p.id === id);
     if (!p) return;
-    const name = prompt('품목명', p.name); if (name === null) return;
-    const spec = prompt('규격', p.spec || ''); if (spec === null) return;
-    const barcode = prompt('바코드', p.barcode || ''); if (barcode === null) return;
-    const priceStr = prompt('기본 단가', p.defaultPrice || 0); if (priceStr === null) return;
-    await db.collection('products').doc(id).update({ name: name.trim() || p.name, spec, barcode, defaultPrice: Math.round(Number(priceStr)) || 0 });
+    const ask = (label, cur) => prompt(label, cur !== undefined && cur !== null ? cur : '');
+    const name = ask('품목명', p.name); if (name === null) return;
+    const spec = ask('규격', p.spec || ''); if (spec === null) return;
+    const barcode = ask('바코드', p.barcode || ''); if (barcode === null) return;
+    const unitsPerBox = ask('박스입수량', p.unitsPerBox || 0); if (unitsPerBox === null) return;
+    const consumerPrice = ask('소비자가', p.consumerPrice || 0); if (consumerPrice === null) return;
+    const memberPrice = ask('조합원가', p.memberPrice || 0); if (memberPrice === null) return;
+    const distributorPrice = ask('대리점가', p.distributorPrice || 0); if (distributorPrice === null) return;
+    const specialDistributorPrice = ask('특판대리점가', p.specialDistributorPrice || 0); if (specialDistributorPrice === null) return;
+    await db.collection('products').doc(id).update({
+      name: name.trim() || p.name, spec, barcode,
+      unitsPerBox: Math.round(Number(unitsPerBox)) || 0,
+      consumerPrice: Math.round(Number(consumerPrice)) || 0,
+      memberPrice: Math.round(Number(memberPrice)) || 0,
+      distributorPrice: Math.round(Number(distributorPrice)) || 0,
+      specialDistributorPrice: Math.round(Number(specialDistributorPrice)) || 0,
+      defaultPrice: Math.round(Number(distributorPrice)) || Math.round(Number(consumerPrice)) || 0
+    });
     showToast('품목 정보를 수정했어요.');
   }
 
@@ -707,6 +765,151 @@ function startApp(fbConfig) {
     await db.collection('products').doc(id).delete();
     showToast('품목을 삭제했어요.');
   }
+
+  /* ============ 품목 엑셀 일괄 등록 (열 번호를 직접 지정) ============ */
+  // 헤더 이름으로 자동 추측은 하되, 최종적으로는 사용자가 숫자로 확인/수정하게 해요.
+  const PRODUCT_EXCEL_HEADER_GUESS = {
+    mapColBarcode: ['바코드'],
+    mapColName: ['품명', '품목명', '상품명'],
+    mapColSpec: ['규격'],
+    mapColBox: ['박스입수량', '박스입수', '입수량', '박스당수량'],
+    mapColConsumer: ['소비자가', '소비자가격'],
+    mapColMember: ['조합원가', '조합원가격'],
+    mapColDist: ['대리점가', '대리점가격'],
+    mapColSpecialDist: ['특판대리점가', '특판대리점가격', '특판가']
+  };
+  let productExcelAoa = [];
+  let productExcelRows = [];
+
+  function normalizeHeader(h) { return String(h || '').replace(/\s+/g, ''); }
+  function guessColIndex(headers, aliases) {
+    const normalized = headers.map(normalizeHeader);
+    for (const alias of aliases) {
+      const idx = normalized.indexOf(normalizeHeader(alias));
+      if (idx !== -1) return idx + 1; // 사람이 보는 "1열, 2열"과 맞추려고 +1
+    }
+    return '';
+  }
+
+  document.getElementById('productExcelInput').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    const rawPreview = document.getElementById('productExcelRawPreview');
+    const mappingArea = document.getElementById('productExcelMappingArea');
+    const previewArea = document.getElementById('productExcelPreviewArea');
+    const uploadBtn = document.getElementById('productExcelUploadBtn');
+    productExcelAoa = []; productExcelRows = [];
+    previewArea.innerHTML = ''; uploadBtn.style.display = 'none';
+    mappingArea.style.display = 'none'; rawPreview.innerHTML = '';
+    if (!file) return;
+
+    const buf = await file.arrayBuffer();
+    const wb = XLSX.read(buf, { type: 'array' });
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    if (!aoa.length) { rawPreview.innerHTML = '<div class="empty">엑셀에서 내용을 못 읽었어요.</div>'; return; }
+    productExcelAoa = aoa;
+
+    // 원본 내용을 열 번호(1,2,3...)와 함께 그대로 보여줘요 — 몇 열에 뭐가 있는지 눈으로 확인하시라고요.
+    const previewRowCount = Math.min(4, aoa.length);
+    const maxCols = Math.max(...aoa.slice(0, previewRowCount).map(r => r.length));
+    let rawHtml = '<div class="desc" style="margin-bottom:6px;">엑셀 원본 미리보기 (위 숫자가 열 번호예요)</div><div class="table-scroll"><table><thead><tr><th></th>';
+    for (let c = 0; c < maxCols; c++) rawHtml += '<th class="num">' + (c + 1) + '열</th>';
+    rawHtml += '</tr></thead><tbody>';
+    for (let r = 0; r < previewRowCount; r++) {
+      rawHtml += '<tr><td style="color:var(--ink-soft);">' + (r + 1) + '행</td>';
+      for (let c = 0; c < maxCols; c++) rawHtml += '<td>' + escapeHtml(aoa[r][c] !== undefined ? aoa[r][c] : '') + '</td>';
+      rawHtml += '</tr>';
+    }
+    rawHtml += '</tbody></table></div>';
+    if (aoa.length > previewRowCount) rawHtml += '<div class="desc" style="margin-top:4px;">... 외 ' + (aoa.length - previewRowCount) + '행 더 있음</div>';
+    rawPreview.innerHTML = rawHtml;
+
+    // 첫 줄이 헤더처럼 보이면 이름으로 열 번호를 미리 짐작해서 채워둬요 (그래도 꼭 확인해주세요)
+    const headers = aoa[0];
+    Object.keys(PRODUCT_EXCEL_HEADER_GUESS).forEach(inputId => {
+      document.getElementById(inputId).value = guessColIndex(headers, PRODUCT_EXCEL_HEADER_GUESS[inputId]);
+    });
+
+    mappingArea.style.display = 'block';
+  });
+
+  document.getElementById('productExcelBuildPreviewBtn').addEventListener('click', () => {
+    const previewArea = document.getElementById('productExcelPreviewArea');
+    const uploadBtn = document.getElementById('productExcelUploadBtn');
+    if (!productExcelAoa.length) return;
+
+    const col = id => {
+      const v = Math.round(Number(document.getElementById(id).value));
+      return (v && v > 0) ? v - 1 : -1; // 1열 -> 배열 인덱스 0
+    };
+    const idx = {
+      barcode: col('mapColBarcode'), name: col('mapColName'), spec: col('mapColSpec'),
+      unitsPerBox: col('mapColBox'), consumerPrice: col('mapColConsumer'), memberPrice: col('mapColMember'),
+      distributorPrice: col('mapColDist'), specialDistributorPrice: col('mapColSpecialDist')
+    };
+    if (idx.name === -1) { showToast('"품명 = 몇 열?"은 꼭 입력해주세요.'); return; }
+
+    const hasHeader = document.getElementById('mapHasHeader').value === 'yes';
+    const dataRows = hasHeader ? productExcelAoa.slice(1) : productExcelAoa;
+    const rows = dataRows.filter(r => String(r[idx.name] || '').trim());
+
+    productExcelRows = rows.map(r => ({
+      barcode: idx.barcode !== -1 ? String(r[idx.barcode] || '').trim() : '',
+      name: String(r[idx.name] || '').trim(),
+      spec: idx.spec !== -1 ? String(r[idx.spec] || '').trim() : '',
+      unitsPerBox: idx.unitsPerBox !== -1 ? Math.round(Number(r[idx.unitsPerBox])) || 0 : 0,
+      consumerPrice: idx.consumerPrice !== -1 ? Math.round(Number(r[idx.consumerPrice])) || 0 : 0,
+      memberPrice: idx.memberPrice !== -1 ? Math.round(Number(r[idx.memberPrice])) || 0 : 0,
+      distributorPrice: idx.distributorPrice !== -1 ? Math.round(Number(r[idx.distributorPrice])) || 0 : 0,
+      specialDistributorPrice: idx.specialDistributorPrice !== -1 ? Math.round(Number(r[idx.specialDistributorPrice])) || 0 : 0
+    }));
+
+    if (!productExcelRows.length) {
+      previewArea.innerHTML = '<div class="empty">등록할 품목이 없어요 (품명이 빈 줄은 건너뛰어요).</div>';
+      uploadBtn.style.display = 'none';
+      return;
+    }
+
+    let html = '<div class="desc" style="margin-bottom:8px;">' + productExcelRows.length + '개 품목을 찾았어요. 아래 내용 확인 후 등록해주세요.</div>';
+    html += '<div class="table-scroll"><table><thead><tr><th>바코드</th><th>품명</th><th>규격</th><th class="num">박스입수량</th><th class="num">소비자가</th><th class="num">조합원가</th><th class="num">대리점가</th><th class="num">특판대리점가</th></tr></thead><tbody>';
+    productExcelRows.forEach(r => {
+      html += '<tr><td>' + escapeHtml(r.barcode||'-') + '</td><td class="prod-name">' + escapeHtml(r.name) + '</td><td>' + escapeHtml(r.spec||'-') + '</td>' +
+        '<td class="num">' + r.unitsPerBox + '</td><td class="num">' + fmtMoney(r.consumerPrice) + '</td><td class="num">' + fmtMoney(r.memberPrice) + '</td>' +
+        '<td class="num">' + fmtMoney(r.distributorPrice) + '</td><td class="num">' + fmtMoney(r.specialDistributorPrice) + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+    previewArea.innerHTML = html;
+    uploadBtn.style.display = '';
+  });
+
+  document.getElementById('productExcelUploadBtn').addEventListener('click', async () => {
+    if (!productExcelRows.length) return;
+    const btn = document.getElementById('productExcelUploadBtn');
+    btn.disabled = true;
+    btn.textContent = '등록 중...';
+    let order = nextOrder(productMaster);
+    const batchSize = 400; // Firestore 배치 쓰기 제한(500) 안전하게 여유 두고
+    for (let i = 0; i < productExcelRows.length; i += batchSize) {
+      const batch = db.batch();
+      productExcelRows.slice(i, i + batchSize).forEach(r => {
+        const ref = db.collection('products').doc();
+        batch.set(ref, {
+          ...r, defaultPrice: r.distributorPrice || r.consumerPrice || 0,
+          order: order++, createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+      });
+      await batch.commit();
+    }
+    showToast(productExcelRows.length + '개 품목을 일괄 등록했어요.');
+    productExcelRows = []; productExcelAoa = [];
+    document.getElementById('productExcelInput').value = '';
+    document.getElementById('productExcelRawPreview').innerHTML = '';
+    document.getElementById('productExcelMappingArea').style.display = 'none';
+    document.getElementById('productExcelPreviewArea').innerHTML = '';
+    btn.style.display = 'none';
+    btn.disabled = false;
+    btn.textContent = '이 내용대로 일괄 등록';
+  });
 
   /* ============ 출고 등록 (거래처 자동입력 + 품목 검색/장바구니) ============ */
   function refreshPartnerSelects() {
@@ -1110,12 +1313,15 @@ function startApp(fbConfig) {
     const area = document.getElementById('productListArea');
     const list = orderedProducts();
     if (!list.length) { area.innerHTML = '<div class="empty">아직 등록된 품목이 없어요.</div>'; return; }
-    let html = '<table><thead><tr><th>품목명</th><th>규격</th><th>바코드</th><th class="num">기본 단가</th><th></th></tr></thead><tbody>';
+    let html = '<div class="table-scroll"><table><thead><tr><th>품목명</th><th>규격</th><th>바코드</th><th class="num">박스입수량</th><th class="num">소비자가</th><th class="num">조합원가</th><th class="num">대리점가</th><th class="num">특판대리점가</th><th></th></tr></thead><tbody>';
     list.forEach(p => {
-      html += '<tr><td class="prod-name">' + escapeHtml(p.name) + '</td><td>' + escapeHtml(p.spec||'-') + '</td><td>' + escapeHtml(p.barcode||'-') + '</td><td class="num">' + fmtMoney(p.defaultPrice) + '</td>' +
+      html += '<tr><td class="prod-name">' + escapeHtml(p.name) + '</td><td>' + escapeHtml(p.spec||'-') + '</td><td>' + escapeHtml(p.barcode||'-') + '</td>' +
+        '<td class="num">' + (p.unitsPerBox||'-') + '</td>' +
+        '<td class="num">' + fmtMoney(p.consumerPrice) + '</td><td class="num">' + fmtMoney(p.memberPrice) + '</td>' +
+        '<td class="num">' + fmtMoney(p.distributorPrice) + '</td><td class="num">' + fmtMoney(p.specialDistributorPrice) + '</td>' +
         '<td class="row-actions"><button data-edit-product="' + p.id + '">수정</button> <button data-remove-product="' + p.id + '">삭제</button></td></tr>';
     });
-    html += '</tbody></table>';
+    html += '</tbody></table></div>';
     area.innerHTML = html;
     area.querySelectorAll('[data-edit-product]').forEach(btn => btn.addEventListener('click', () => editProductMaster(btn.dataset.editProduct)));
     area.querySelectorAll('[data-remove-product]').forEach(btn => btn.addEventListener('click', () => removeProductMaster(btn.dataset.removeProduct)));
