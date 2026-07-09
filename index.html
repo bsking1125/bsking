@@ -206,9 +206,22 @@
     <div class="card" style="margin-bottom:16px;">
       <div class="field">
         <label>거래처 (공급받는자)</label>
-        <select id="regPartnerSelect"><option value="">거래처 선택</option></select>
+        <select id="regPartnerSelect"><option value="">거래처 선택</option><option value="__manual__">✏️ 직접 입력 (1회성 거래)</option></select>
       </div>
       <div id="regPartnerInfoCard" style="display:none; font-size:12px; color:var(--ink-soft); background:var(--bg); border-radius:8px; padding:10px 12px; margin-top:-4px; margin-bottom:14px; line-height:1.7;"></div>
+
+      <div id="manualPartnerFields" style="display:none; background:var(--amber-tint); border:1px solid var(--amber); border-radius:8px; padding:12px; margin-bottom:14px;">
+        <div class="desc" style="color:var(--amber); margin-bottom:8px;">1회성 거래처예요. 여기 적으신 내용은 거래명세표에만 쓰이고, 따로 저장은 안 돼요.</div>
+        <div class="add-row">
+          <div class="field" style="flex:1; min-width:160px;"><label>거래처명(상호) *</label><input type="text" id="manualPartnerNameInput"></div>
+          <div class="field" style="flex:1; min-width:140px;"><label>등록번호</label><input type="text" id="manualPartnerBizNoInput"></div>
+          <div class="field" style="flex:1; min-width:120px;"><label>대표자</label><input type="text" id="manualPartnerCeoInput"></div>
+        </div>
+        <div class="add-row">
+          <div class="field" style="flex:2; min-width:200px;"><label>주소</label><input type="text" id="manualPartnerAddressInput"></div>
+          <div class="field" style="flex:1; min-width:120px;"><label>검수자</label><input type="text" id="manualPartnerContactInput"></div>
+        </div>
+      </div>
 
       <div class="add-row">
         <div class="field" style="flex:1; min-width:160px;"><label>배송처</label><input type="text" id="regShipToInput"></div>
@@ -946,8 +959,10 @@ function startApp(fbConfig) {
   /* ============ 출고 등록 (거래처 자동입력 + 품목 검색/장바구니) ============ */
   function refreshPartnerSelects() {
     const list = orderedPartners();
-    const opts = '<option value="">거래처 선택</option>' + list.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
+    const selected = document.getElementById('regPartnerSelect').value;
+    const opts = '<option value="">거래처 선택</option><option value="__manual__">✏️ 직접 입력 (1회성 거래)</option>' + list.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
     document.getElementById('regPartnerSelect').innerHTML = opts;
+    document.getElementById('regPartnerSelect').value = selected; // 목록이 갱신돼도 고르고 있던 값 유지
     document.getElementById('outFilterPartner').innerHTML = '<option value="">전체 거래처</option>' + list.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
     document.getElementById('ledgerFilterPartner').innerHTML = '<option value="">전체 거래처</option>' + list.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
   }
@@ -955,6 +970,15 @@ function startApp(fbConfig) {
   document.getElementById('regPartnerSelect').addEventListener('change', () => {
     const id = document.getElementById('regPartnerSelect').value;
     const infoCard = document.getElementById('regPartnerInfoCard');
+    const manualFields = document.getElementById('manualPartnerFields');
+
+    if (id === '__manual__') {
+      infoCard.style.display = 'none';
+      manualFields.style.display = 'block';
+      return;
+    }
+    manualFields.style.display = 'none';
+
     const p = partners.find(p => p.id === id);
     if (!p) { infoCard.style.display = 'none'; return; }
     infoCard.style.display = 'block';
@@ -1115,7 +1139,9 @@ function startApp(fbConfig) {
     renderCart();
     document.getElementById('regPartnerSelect').value = '';
     document.getElementById('regPartnerInfoCard').style.display = 'none';
-    ['regShipToInput','regReceiverInput','regReceiverPhoneInput','regShipAddressInput'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('manualPartnerFields').style.display = 'none';
+    ['manualPartnerNameInput','manualPartnerBizNoInput','manualPartnerCeoInput','manualPartnerAddressInput','manualPartnerContactInput',
+     'regShipToInput','regReceiverInput','regReceiverPhoneInput','regShipAddressInput'].forEach(id => document.getElementById(id).value = '');
     editingOutboundId = null;
     document.getElementById('editModeNotice').style.display = 'none';
     document.getElementById('outRegisterBtn').textContent = '출고 등록';
@@ -1130,8 +1156,18 @@ function startApp(fbConfig) {
     document.getElementById('editModeNotice').style.display = 'flex';
     document.getElementById('outRegisterBtn').textContent = '수정 내용 저장';
     document.getElementById('lastRegisteredArea').style.display = 'none';
-    document.getElementById('regPartnerSelect').value = o.partnerId || '';
-    document.getElementById('regPartnerSelect').dispatchEvent(new Event('change'));
+    if (o.partnerId) {
+      document.getElementById('regPartnerSelect').value = o.partnerId;
+      document.getElementById('regPartnerSelect').dispatchEvent(new Event('change'));
+    } else {
+      document.getElementById('regPartnerSelect').value = '__manual__';
+      document.getElementById('regPartnerSelect').dispatchEvent(new Event('change'));
+      document.getElementById('manualPartnerNameInput').value = o.partnerName || '';
+      document.getElementById('manualPartnerBizNoInput').value = o.partnerBizNo || '';
+      document.getElementById('manualPartnerCeoInput').value = o.partnerCeo || '';
+      document.getElementById('manualPartnerAddressInput').value = o.partnerAddress || '';
+      document.getElementById('manualPartnerContactInput').value = o.partnerContact || '';
+    }
     document.getElementById('regShipToInput').value = o.shipTo || '';
     document.getElementById('regReceiverInput').value = o.receiver || '';
     document.getElementById('regReceiverPhoneInput').value = o.receiverPhone || '';
@@ -1143,15 +1179,32 @@ function startApp(fbConfig) {
 
   document.getElementById('outRegisterBtn').addEventListener('click', async () => {
     const partnerId = document.getElementById('regPartnerSelect').value;
-    const p = partners.find(p => p.id === partnerId);
-    if (!p) { showToast('거래처를 선택해주세요.'); return; }
+    const isManual = partnerId === '__manual__';
+    let partnerInfo;
+    if (isManual) {
+      const name = document.getElementById('manualPartnerNameInput').value.trim();
+      if (!name) { showToast('거래처명을 입력해주세요.'); return; }
+      partnerInfo = {
+        partnerId: null, partnerName: name,
+        partnerBizNo: document.getElementById('manualPartnerBizNoInput').value.trim(),
+        partnerCeo: document.getElementById('manualPartnerCeoInput').value.trim(),
+        partnerAddress: document.getElementById('manualPartnerAddressInput').value.trim(),
+        partnerContact: document.getElementById('manualPartnerContactInput').value.trim()
+      };
+    } else {
+      const p = partners.find(p => p.id === partnerId);
+      if (!p) { showToast('거래처를 선택해주세요.'); return; }
+      partnerInfo = {
+        partnerId, partnerName: p.name, partnerBizNo: p.bizNo || '', partnerCeo: p.ceo || '',
+        partnerAddress: p.address || '', partnerContact: p.contact || ''
+      };
+    }
     if (!cartItems.length) { showToast('담긴 품목이 없어요.'); return; }
     if (cartItems.some(it => !it.qty || it.qty <= 0)) { showToast('수량은 1 이상이어야 해요.'); return; }
 
     const totals = computeTotals(cartItems);
     const order = {
-      partnerId, partnerName: p.name, partnerBizNo: p.bizNo || '', partnerCeo: p.ceo || '',
-      partnerAddress: p.address || '', partnerContact: p.contact || '',
+      ...partnerInfo,
       shipTo: document.getElementById('regShipToInput').value.trim(),
       receiver: document.getElementById('regReceiverInput').value.trim(),
       receiverPhone: document.getElementById('regReceiverPhoneInput').value.trim(),
@@ -1173,14 +1226,36 @@ function startApp(fbConfig) {
       order.createdBy = auth.currentUser.email;
       const docRef = await db.collection('outbound').add(order);
       lastRegisteredOrder = { id: docRef.id, ...order, createdAt: new Date() };
+      const shipToVal = document.getElementById('regShipToInput').value.trim();
+      const receiverVal = document.getElementById('regReceiverInput').value.trim();
+      const receiverPhoneVal = document.getElementById('regReceiverPhoneInput').value.trim();
+      const shipAddressVal = document.getElementById('regShipAddressInput').value.trim();
       cartItems = [];
       renderCart();
       document.getElementById('regPartnerSelect').value = '';
       document.getElementById('regPartnerInfoCard').style.display = 'none';
-      ['regShipToInput','regReceiverInput','regReceiverPhoneInput','regShipAddressInput'].forEach(id => document.getElementById(id).value = '');
-      document.getElementById('lastRegisteredPartner').textContent = p.name;
+      document.getElementById('manualPartnerFields').style.display = 'none';
+      ['manualPartnerNameInput','manualPartnerBizNoInput','manualPartnerCeoInput','manualPartnerAddressInput','manualPartnerContactInput',
+       'regShipToInput','regReceiverInput','regReceiverPhoneInput','regShipAddressInput'].forEach(id => document.getElementById(id).value = '');
+      document.getElementById('lastRegisteredPartner').textContent = partnerInfo.partnerName;
       document.getElementById('lastRegisteredArea').style.display = 'block';
       showToast('출고 등록 완료했어요.');
+
+      if (isManual) {
+        if (confirm('"' + partnerInfo.partnerName + '"을(를) 거래처로 등록해두시겠어요?\n등록해두면 다음에 또 거래할 때 목록에서 바로 고를 수 있어요.')) {
+          document.getElementById('partnerNameInput').value = partnerInfo.partnerName;
+          document.getElementById('partnerBizNoInput').value = partnerInfo.partnerBizNo;
+          document.getElementById('partnerCeoInput').value = partnerInfo.partnerCeo;
+          document.getElementById('partnerAddressInput').value = partnerInfo.partnerAddress;
+          document.getElementById('partnerContactInput').value = partnerInfo.partnerContact;
+          document.getElementById('partnerShipToInput').value = shipToVal;
+          document.getElementById('partnerReceiverInput').value = receiverVal;
+          document.getElementById('partnerReceiverPhoneInput').value = receiverPhoneVal;
+          document.getElementById('partnerShipAddressInput').value = shipAddressVal;
+          document.querySelector('.tab-btn[data-tab="partners"]').click();
+          showToast('내용을 미리 채워놨어요. "거래처 추가" 눌러서 저장해주세요.');
+        }
+      }
     }
   });
   document.getElementById('printLastInvoiceBtn').addEventListener('click', () => {
