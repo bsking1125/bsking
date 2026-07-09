@@ -202,11 +202,11 @@
       <div id="regPartnerInfoCard" style="display:none; font-size:12px; color:var(--ink-soft); background:var(--bg); border-radius:8px; padding:10px 12px; margin-top:-4px; margin-bottom:14px; line-height:1.7;"></div>
 
       <div class="add-row">
-        <div class="field" style="flex:1; min-width:160px;"><label>배송처</label><input type="text" id="regShipToInput" placeholder="비워두면 명세표에도 빈 값으로 나가요"></div>
+        <div class="field" style="flex:1; min-width:160px;"><label>배송처</label><input type="text" id="regShipToInput"></div>
         <div class="field" style="flex:1; min-width:160px;"><label>입고담당자</label><input type="text" id="regReceiverInput"></div>
         <div class="field" style="flex:1; min-width:160px;"><label>입고담당자 연락처</label><input type="text" id="regReceiverPhoneInput"></div>
       </div>
-      <div class="field"><label>배송지 주소</label><input type="text" id="regShipAddressInput" placeholder="비워두면 명세표에도 빈 값으로 나가요"></div>
+      <div class="field"><label>배송지 주소</label><input type="text" id="regShipAddressInput"></div>
     </div>
 
     <div class="section-head"><div><h2 style="font-size:14px;">품목 담기</h2><div class="desc">품목명이나 바코드 일부를 입력하면 검색돼요. 없는 품목이면 "품목 관리" 탭에서 먼저 등록해주세요.</div></div></div>
@@ -359,13 +359,13 @@
         <div class="field" style="flex:2; min-width:220px;"><label>주소</label><input type="text" id="partnerAddressInput"></div>
         <div class="field" style="flex:1; min-width:140px;"><label>검수자</label><input type="text" id="partnerContactInput"></div>
       </div>
-      <div class="desc" style="margin: 4px 0 8px;">아래는 출고 등록에서 거래처를 고르면 미리 채워지는 값이에요. 비워두면 거래명세표에도 빈 값("-")으로 그대로 나가요 — 다른 정보로 자동으로 채워지지 않아요.</div>
       <div class="add-row">
         <div class="field" style="flex:1; min-width:160px;"><label>배송처</label><input type="text" id="partnerShipToInput"></div>
         <div class="field" style="flex:1; min-width:140px;"><label>입고담당자</label><input type="text" id="partnerReceiverInput"></div>
         <div class="field" style="flex:1; min-width:140px;"><label>입고담당자 연락처</label><input type="text" id="partnerReceiverPhoneInput"></div>
       </div>
       <div class="field"><label>배송지 주소</label><input type="text" id="partnerShipAddressInput"></div>
+      <div class="desc" style="margin-bottom:8px;">* 입력하지 않은 내용은 거래명세표에 빈칸으로 기입됩니다.</div>
       <button class="primary-btn" id="addPartnerBtn">거래처 추가</button>
     </div>
     <div id="partnerListArea"></div>
