@@ -115,6 +115,8 @@
   .money-input { text-align: right; }
   #itemCartTable th { text-align: center; }
   #itemCartTable td input { font-family: inherit; font-size: 13px; box-sizing: border-box; }
+  #itemCartTable { table-layout: fixed; }
+  #itemCartTable td.prod-name { white-space: normal; word-break: break-word; }
 </style>
 </head>
 <body>
@@ -227,7 +229,7 @@
 
     <div class="table-scroll" style="margin-bottom:10px;">
       <table id="itemCartTable">
-        <thead><tr><th>품목명</th><th style="width:90px;">규격</th><th class="num" style="width:80px;">수량</th><th class="num" style="width:100px;">단가</th><th class="num" style="width:100px;">금액</th><th style="width:120px;">비고</th><th style="width:50px;"></th></tr></thead>
+        <thead><tr><th style="width:170px;">품목명</th><th style="width:90px;">규격</th><th class="num" style="width:70px;">수량</th><th class="num" style="width:110px;">단가</th><th class="num" style="width:110px;">금액</th><th style="width:140px;">비고</th><th style="width:50px;"></th></tr></thead>
         <tbody id="itemCartBody"><tr><td colspan="7" class="empty">위에서 검색해서 품목을 담아주세요.</td></tr></tbody>
       </table>
     </div>
@@ -967,34 +969,70 @@ function startApp(fbConfig) {
   // 품목 검색 (품목명 또는 바코드 일부 일치)
   const itemSearchInput = document.getElementById('itemSearchInput');
   const itemSearchResults = document.getElementById('itemSearchResults');
-  itemSearchInput.addEventListener('input', () => {
-    const q = itemSearchInput.value.trim().toLowerCase();
-    if (!q) { itemSearchResults.style.display = 'none'; itemSearchResults.innerHTML = ''; return; }
-    const matches = orderedProducts().filter(p =>
-      (p.name || '').toLowerCase().includes(q) || (p.barcode || '').toLowerCase().includes(q)
-    ).slice(0, 8);
-    if (!matches.length) {
+  let itemSearchMatches = [];
+  let itemSearchActiveIdx = -1;
+
+  function renderItemSearchResults() {
+    if (!itemSearchMatches.length) {
       itemSearchResults.innerHTML = '<div style="padding:10px 12px; font-size:12px; color:var(--ink-soft);">일치하는 품목이 없어요. "품목 관리"에서 먼저 등록해주세요.</div>';
       itemSearchResults.style.display = 'block';
       return;
     }
-    itemSearchResults.innerHTML = matches.map(p =>
-      '<div class="search-result-row" data-pick="' + p.id + '" style="padding:9px 12px; font-size:13px; cursor:pointer; border-bottom:1px solid var(--line);">' +
+    itemSearchResults.innerHTML = itemSearchMatches.map((p, i) =>
+      '<div class="search-result-row" data-pick="' + p.id + '" style="padding:9px 12px; font-size:13px; cursor:pointer; border-bottom:1px solid var(--line);' +
+      (i === itemSearchActiveIdx ? ' background:var(--primary-tint);' : '') + '">' +
       '<span class="prod-name">' + escapeHtml(p.name) + '</span> ' +
       '<span style="color:var(--ink-soft); font-size:12px;">' + escapeHtml(p.spec || '') + (p.barcode ? ' · ' + escapeHtml(p.barcode) : '') + '</span>' +
       '</div>'
     ).join('');
     itemSearchResults.style.display = 'block';
-    itemSearchResults.querySelectorAll('[data-pick]').forEach(row => {
-      row.addEventListener('click', () => {
-        const p = productMaster.find(x => x.id === row.dataset.pick);
-        if (p) addToCart(p);
-        itemSearchInput.value = '';
-        itemSearchResults.style.display = 'none';
-        itemSearchInput.focus();
-      });
+    itemSearchResults.querySelectorAll('[data-pick]').forEach((row, i) => {
+      row.addEventListener('mouseenter', () => { itemSearchActiveIdx = i; renderItemSearchResults(); });
+      row.addEventListener('click', () => pickItemSearchResult(i));
     });
+  }
+
+  function pickItemSearchResult(i) {
+    const p = itemSearchMatches[i];
+    if (p) addToCart(p);
+    itemSearchInput.value = '';
+    itemSearchMatches = []; itemSearchActiveIdx = -1;
+    itemSearchResults.style.display = 'none';
+    itemSearchInput.focus();
+  }
+
+  itemSearchInput.addEventListener('input', () => {
+    const q = itemSearchInput.value.trim().toLowerCase();
+    itemSearchActiveIdx = -1;
+    if (!q) { itemSearchResults.style.display = 'none'; itemSearchResults.innerHTML = ''; itemSearchMatches = []; return; }
+    itemSearchMatches = orderedProducts().filter(p =>
+      (p.name || '').toLowerCase().includes(q) || (p.barcode || '').toLowerCase().includes(q)
+    ).slice(0, 8);
+    renderItemSearchResults();
   });
+
+  // 방향키(↓↑)로 목록을 옮겨다니고, 엔터로 선택, Esc로 닫을 수 있게 해요 (마우스 없이도 편하게)
+  itemSearchInput.addEventListener('keydown', e => {
+    if (itemSearchResults.style.display === 'none' || !itemSearchMatches.length) return;
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      itemSearchActiveIdx = (itemSearchActiveIdx + 1) % itemSearchMatches.length;
+      renderItemSearchResults();
+      itemSearchResults.children[itemSearchActiveIdx].scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      itemSearchActiveIdx = (itemSearchActiveIdx - 1 + itemSearchMatches.length) % itemSearchMatches.length;
+      renderItemSearchResults();
+      itemSearchResults.children[itemSearchActiveIdx].scrollIntoView({ block: 'nearest' });
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      if (itemSearchActiveIdx === -1) itemSearchActiveIdx = 0;
+      pickItemSearchResult(itemSearchActiveIdx);
+    } else if (e.key === 'Escape') {
+      itemSearchResults.style.display = 'none';
+    }
+  });
+
   document.addEventListener('click', e => {
     if (!itemSearchResults.contains(e.target) && e.target !== itemSearchInput) itemSearchResults.style.display = 'none';
   });
@@ -1497,6 +1535,10 @@ function startApp(fbConfig) {
   /* ============ 탭 전환 ============ */
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
+      const leavingRegister = document.querySelector('.tab-btn[data-tab="register"]').classList.contains('active');
+      if (leavingRegister && btn.dataset.tab !== 'register' && editingOutboundId) {
+        resetRegisterForm(); // 다른 탭으로 이동하면 "수정 중" 상태가 계속 남지 않게 자동으로 풀어줘요
+      }
       document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
       document.querySelectorAll('.tab-panel').forEach(p => {
