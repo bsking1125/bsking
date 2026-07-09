@@ -634,6 +634,9 @@ function startApp(fbConfig) {
 
     db.collection('outbound').orderBy('createdAt', 'desc').limit(500).onSnapshot(snap => {
       outboundList = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      if (editingOutboundId && !outboundList.some(o => o.id === editingOutboundId)) {
+        resetRegisterForm(); // 수정하려던 건이 이미 삭제됐거나 없으면 수정 모드를 자동으로 풀어줘요
+      }
       renderAll();
     }, err => showToast('출고 내역을 불러오지 못했어요: ' + err.message));
 
