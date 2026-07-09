@@ -167,6 +167,25 @@
   </div>
 </div>
 
+<!-- 앱 선택 화면 -->
+<div id="hubGate" class="center-screen" style="display:none;">
+  <div class="center-box" style="max-width:480px; text-align:center;">
+    <h1>어떤 걸 여실래요?</h1>
+    <div class="sub" style="margin-bottom:22px;">같은 계정으로 두 앱 다 쓸 수 있어요. 필요할 때 언제든 서로 넘어갈 수 있어요.</div>
+    <div style="display:flex; flex-direction:column; gap:12px;">
+      <button id="hubGoWarehouseBtn" class="primary-btn" style="padding:18px; font-size:15px; text-align:left;">
+        🚚 창고 관리 (출고 등록)<br><span style="font-weight:400; font-size:12px; opacity:0.85;">거래명세표 만들고, 창고이동 관리해요</span>
+      </button>
+      <button id="hubGoOnlineBtn" class="ghost-btn" style="padding:18px; font-size:15px; text-align:left;">
+        📦 온라인 재고 관리<br><span style="font-weight:400; font-size:12px; color:var(--ink-soft);">온라인 채널별 미결 재고를 관리해요</span>
+      </button>
+    </div>
+    <div style="margin-top:20px;">
+      <button class="ghost-btn" id="hubLogoutBtn" style="border:none; color:var(--ink-soft); text-decoration:underline;">로그아웃</button>
+    </div>
+  </div>
+</div>
+
 <div class="wrap" id="appWrap" style="display:none;">
 
   <div class="topbar">
@@ -175,6 +194,7 @@
       <div class="subtitle" style="margin:2px 0 0;">출고할 때마다 거래명세표를 만들고, 창고이동을 놓치지 않게 관리해요</div>
     </div>
     <div class="user-chip">
+      <a href="./online.html" class="ghost-btn" style="text-decoration:none;">📦 온라인 재고 관리로 이동</a>
       <span id="currentUserEmail"></span>
       <button class="ghost-btn" id="logoutBtn">로그아웃</button>
     </div>
@@ -545,6 +565,7 @@ function startApp(fbConfig) {
     if (!user) {
       if (approvalsUnsub) { approvalsUnsub(); approvalsUnsub = null; }
       document.getElementById('appWrap').style.display = 'none';
+      document.getElementById('hubGate').style.display = 'none';
       document.getElementById('pendingGate').style.display = 'none';
       document.getElementById('loginGate').style.display = 'flex';
       return;
@@ -579,7 +600,8 @@ function startApp(fbConfig) {
   function enterApp(user, admin) {
     document.getElementById('pendingGate').style.display = 'none';
     document.getElementById('loginGate').style.display = 'none';
-    document.getElementById('appWrap').style.display = '';
+    document.getElementById('hubGate').style.display = 'flex';
+    document.getElementById('appWrap').style.display = 'none';
     document.getElementById('currentUserEmail').textContent = user.email + (admin ? ' (관리자)' : '');
     document.getElementById('approvalsTabBtn').style.display = admin ? '' : 'none';
     document.getElementById('activityLogTabBtn').style.display = admin ? '' : 'none';
@@ -603,6 +625,15 @@ function startApp(fbConfig) {
     initRealtimeListeners();
     if (admin) initApprovalsListener();
   }
+
+  document.getElementById('hubGoWarehouseBtn').addEventListener('click', () => {
+    document.getElementById('hubGate').style.display = 'none';
+    document.getElementById('appWrap').style.display = '';
+  });
+  document.getElementById('hubGoOnlineBtn').addEventListener('click', () => {
+    window.location.href = './online.html';
+  });
+  document.getElementById('hubLogoutBtn').addEventListener('click', () => auth.signOut());
 
   let approvalsUnsub = null;
   let pendingUsers = [];
