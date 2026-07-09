@@ -168,6 +168,17 @@
 </div>
 
 <!-- 앱 선택 화면 -->
+<!-- 접근 권한 없음 -->
+<div id="noAccessGate" class="center-screen" style="display:none;">
+  <div class="center-box" style="text-align:center;">
+    <h1>🚫 접근 권한이 없어요</h1>
+    <div class="sub">이 앱(창고지기) 이용 권한이 아직 없어요. 관리자에게 문의해주세요.</div>
+    <div class="user-chip" style="justify-content:center; margin-top:14px;">
+      <button class="ghost-btn" id="noAccessLogoutBtn">로그아웃</button>
+    </div>
+  </div>
+</div>
+
 <div id="hubGate" class="center-screen" style="display:none;">
   <div class="center-box" style="max-width:480px; text-align:center;">
     <h1>어떤 걸 여실래요?</h1>
@@ -208,14 +219,14 @@
     <button class="tab-btn" data-tab="ledger">전체 품목 기록</button>
     <button class="tab-btn" data-tab="products">품목 관리</button>
     <button class="tab-btn" data-tab="partners">거래처 관리</button>
-    <button class="tab-btn" data-tab="approvals" id="approvalsTabBtn" style="display:none;">가입 승인<span id="pendingCountBadge"></span></button>
+    <button class="tab-btn" data-tab="approvals" id="approvalsTabBtn" style="display:none;">회원 관리<span id="pendingCountBadge"></span></button>
     <button class="tab-btn" data-tab="activitylog" id="activityLogTabBtn" style="display:none;">변경 이력</button>
   </div>
 
-  <!-- 가입 승인 (관리자 전용) -->
+  <!-- 회원 관리 (관리자 전용) -->
   <div class="tab-panel" data-panel="approvals" style="display:none;">
     <div class="section-head">
-      <div><h2>가입 승인</h2><div class="desc">회원가입한 사람이 여기 뜨면 승인해줘야 앱을 쓸 수 있어요.</div></div>
+      <div><h2>회원 관리</h2><div class="desc">가입 승인하고, 사람마다 어떤 앱에 들어갈 수 있는지 정해요.</div></div>
     </div>
     <div id="approvalsListArea"></div>
   </div>
@@ -557,6 +568,7 @@ function startApp(fbConfig) {
   });
 
   document.getElementById('pendingLogoutBtn').addEventListener('click', () => auth.signOut());
+  document.getElementById('noAccessLogoutBtn').addEventListener('click', () => auth.signOut());
 
   let unsubscribeOwnProfile = null;
   auth.onAuthStateChanged(user => {
@@ -566,6 +578,7 @@ function startApp(fbConfig) {
       if (approvalsUnsub) { approvalsUnsub(); approvalsUnsub = null; }
       document.getElementById('appWrap').style.display = 'none';
       document.getElementById('hubGate').style.display = 'none';
+      document.getElementById('noAccessGate').style.display = 'none';
       document.getElementById('pendingGate').style.display = 'none';
       document.getElementById('loginGate').style.display = 'flex';
       return;
@@ -580,8 +593,15 @@ function startApp(fbConfig) {
     // (관리자가 승인 버튼을 누르는 순간 이 화면이 자동으로 앱으로 넘어가요)
     unsubscribeOwnProfile = db.collection('users').doc(user.uid).onSnapshot(doc => {
       const approved = doc.exists && doc.data().approved === true;
-      if (approved) {
+      const hasAccess = doc.exists && doc.data().warehouseAccess === true;
+      if (approved && hasAccess) {
         enterApp(user, false);
+      } else if (approved) {
+        document.getElementById('appWrap').style.display = 'none';
+        document.getElementById('hubGate').style.display = 'none';
+        document.getElementById('loginGate').style.display = 'none';
+        document.getElementById('pendingGate').style.display = 'none';
+        document.getElementById('noAccessGate').style.display = 'flex';
       } else {
         document.getElementById('appWrap').style.display = 'none';
         document.getElementById('loginGate').style.display = 'none';
@@ -636,33 +656,74 @@ function startApp(fbConfig) {
   document.getElementById('hubLogoutBtn').addEventListener('click', () => auth.signOut());
 
   let approvalsUnsub = null;
-  let pendingUsers = [];
+  let allMembers = [];
   function initApprovalsListener() {
     if (approvalsUnsub) return;
     approvalsUnsub = db.collection('users').onSnapshot(snap => {
-      pendingUsers = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(u => !u.approved);
+      allMembers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      const pendingCount = allMembers.filter(u => !u.approved).length;
       const badge = document.getElementById('pendingCountBadge');
-      badge.innerHTML = pendingUsers.length ? '<span class="count-badge">' + pendingUsers.length + '</span>' : '';
+      badge.innerHTML = pendingCount ? '<span class="count-badge">' + pendingCount + '</span>' : '';
       renderApprovals();
-    }, err => showToast('가입 목록을 불러오지 못했어요: ' + err.message));
+    }, err => showToast('회원 목록을 불러오지 못했어요: ' + err.message));
   }
+
   function renderApprovals() {
     const area = document.getElementById('approvalsListArea');
     if (!area) return;
-    if (!pendingUsers.length) { area.innerHTML = '<div class="empty">승인 대기 중인 가입 신청이 없어요.</div>'; return; }
-    let html = '<table><thead><tr><th>이메일</th><th>신청일시</th><th></th></tr></thead><tbody>';
-    pendingUsers.forEach(u => {
-      html += '<tr><td class="prod-name">' + escapeHtml(u.email) + '</td><td>' + fmtDate(u.createdAt) + '</td>' +
-        '<td class="row-actions"><button class="primary-btn" style="padding:6px 12px; font-size:12px;" data-approve="' + u.id + '">승인</button></td></tr>';
+    if (!allMembers.length) { area.innerHTML = '<div class="empty">아직 가입한 사람이 없어요.</div>'; return; }
+
+    // 대기 중인 사람을 먼저 보여주고, 그다음 승인된 사람들을 최근 가입순으로
+    const sorted = [...allMembers].sort((a, b) => {
+      if (!!a.approved !== !!b.approved) return a.approved ? 1 : -1;
+      return 0;
+    });
+
+    let html = '<table><thead><tr><th>이메일</th><th>가입일시</th><th>상태</th><th>🚚 창고지기</th><th>📦 온라인 재고</th><th></th></tr></thead><tbody>';
+    sorted.forEach(u => {
+      if (!u.approved) {
+        html += '<tr><td class="prod-name">' + escapeHtml(u.email) + '</td><td>' + fmtDate(u.createdAt) + '</td>' +
+          '<td><span class="status-pill status-pending">대기중</span></td>' +
+          '<td><input type="checkbox" data-new-warehouse="' + u.id + '"></td>' +
+          '<td><input type="checkbox" data-new-online="' + u.id + '"></td>' +
+          '<td class="row-actions"><button class="primary-btn" style="padding:6px 12px; font-size:12px;" data-approve="' + u.id + '">승인</button></td></tr>';
+      } else {
+        html += '<tr><td class="prod-name">' + escapeHtml(u.email) + '</td><td>' + fmtDate(u.createdAt) + '</td>' +
+          '<td><span class="status-pill status-done">승인됨</span></td>' +
+          '<td><input type="checkbox" data-toggle-warehouse="' + u.id + '" ' + (u.warehouseAccess ? 'checked' : '') + '></td>' +
+          '<td><input type="checkbox" data-toggle-online="' + u.id + '" ' + (u.onlineAccess ? 'checked' : '') + '></td>' +
+          '<td></td></tr>';
+      }
     });
     html += '</tbody></table>';
     area.innerHTML = html;
+
     area.querySelectorAll('[data-approve]').forEach(btn => {
       btn.addEventListener('click', async () => {
-        await db.collection('users').doc(btn.dataset.approve).update({
-          approved: true, approvedAt: firebase.firestore.FieldValue.serverTimestamp(), approvedBy: auth.currentUser.email
+        const id = btn.dataset.approve;
+        const warehouseAccess = area.querySelector('[data-new-warehouse="' + id + '"]').checked;
+        const onlineAccess = area.querySelector('[data-new-online="' + id + '"]').checked;
+        if (!warehouseAccess && !onlineAccess) {
+          showToast('최소 하나는 접근 권한을 체크한 뒤 승인해주세요.');
+          return;
+        }
+        await db.collection('users').doc(id).update({
+          approved: true, warehouseAccess, onlineAccess,
+          approvedAt: firebase.firestore.FieldValue.serverTimestamp(), approvedBy: auth.currentUser.email
         });
         showToast('승인했어요.');
+      });
+    });
+    area.querySelectorAll('[data-toggle-warehouse]').forEach(cb => {
+      cb.addEventListener('change', async () => {
+        await db.collection('users').doc(cb.dataset.toggleWarehouse).update({ warehouseAccess: cb.checked });
+        showToast('창고지기 접근 권한을 ' + (cb.checked ? '켰어요.' : '껐어요.'));
+      });
+    });
+    area.querySelectorAll('[data-toggle-online]').forEach(cb => {
+      cb.addEventListener('change', async () => {
+        await db.collection('users').doc(cb.dataset.toggleOnline).update({ onlineAccess: cb.checked });
+        showToast('온라인 재고 접근 권한을 ' + (cb.checked ? '켰어요.' : '껐어요.'));
       });
     });
   }

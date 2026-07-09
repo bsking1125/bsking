@@ -205,6 +205,14 @@
   </div>
 </div>
 
+<div id="noAccessGate" style="position:fixed; inset:0; z-index:9999; background: var(--bg); display:none; align-items:center; justify-content:center; padding:24px;">
+  <div style="background: var(--surface); border:1px solid var(--line); border-radius:14px; padding:32px 28px; width:100%; max-width:340px; box-shadow:0 10px 30px rgba(0,0,0,0.08); text-align:center;">
+    <div style="font-size:18px; font-weight:700; margin-bottom:6px; color: var(--ink);">🚫 접근 권한이 없어요</div>
+    <div style="font-size:13px; color: var(--ink-soft); margin-bottom:18px;">이 앱(온라인 재고 관리) 이용 권한이 아직 없어요. 관리자에게 문의해주세요.</div>
+    <button class="ghost-btn" id="noAccessLogoutBtn">로그아웃</button>
+  </div>
+</div>
+
 <div class="wrap" id="appWrap" style="display:none;">
   <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:2px;">
     <div></div>
@@ -441,6 +449,7 @@ document.getElementById('forgotPwBtn').addEventListener('click', () => {
 });
 document.getElementById('onlineLogoutBtn').addEventListener('click', () => auth.signOut());
 document.getElementById('pendingLogoutBtn').addEventListener('click', () => auth.signOut());
+document.getElementById('noAccessLogoutBtn').addEventListener('click', () => auth.signOut());
 
 document.getElementById('signupSubmitBtn').addEventListener('click', async () => {
   const email = document.getElementById('signupEmailInput').value.trim();
@@ -468,6 +477,7 @@ auth.onAuthStateChanged(user => {
   if (unsubscribeOwnProfileOnline) { unsubscribeOwnProfileOnline(); unsubscribeOwnProfileOnline = null; }
   if (!user) {
     document.getElementById('appWrap').style.display = 'none';
+    document.getElementById('noAccessGate').style.display = 'none';
     document.getElementById('pendingGate').style.display = 'none';
     document.getElementById('loginGate').style.display = 'flex';
     return;
@@ -475,10 +485,17 @@ auth.onAuthStateChanged(user => {
   if (isAdminEmail(user.email)) { enterOnlineApp(user); return; }
   unsubscribeOwnProfileOnline = db.collection('users').doc(user.uid).onSnapshot(doc => {
     const approved = doc.exists && doc.data().approved === true;
-    if (approved) {
+    const hasAccess = doc.exists && doc.data().onlineAccess === true;
+    if (approved && hasAccess) {
       enterOnlineApp(user);
+    } else if (approved) {
+      document.getElementById('appWrap').style.display = 'none';
+      document.getElementById('loginGate').style.display = 'none';
+      document.getElementById('pendingGate').style.display = 'none';
+      document.getElementById('noAccessGate').style.display = 'flex';
     } else {
       document.getElementById('appWrap').style.display = 'none';
+      document.getElementById('noAccessGate').style.display = 'none';
       document.getElementById('loginGate').style.display = 'none';
       document.getElementById('pendingGate').style.display = 'flex';
       document.getElementById('pendingUserEmail').textContent = user.email;
