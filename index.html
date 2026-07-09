@@ -1055,10 +1055,10 @@ function startApp(fbConfig) {
     const order = {
       partnerId, partnerName: p.name, partnerBizNo: p.bizNo || '', partnerCeo: p.ceo || '',
       partnerAddress: p.address || '', partnerContact: p.contact || '',
-      shipTo: document.getElementById('regShipToInput').value.trim() || p.name,
+      shipTo: document.getElementById('regShipToInput').value.trim(),
       receiver: document.getElementById('regReceiverInput').value.trim(),
       receiverPhone: document.getElementById('regReceiverPhoneInput').value.trim(),
-      shipAddress: document.getElementById('regShipAddressInput').value.trim() || p.address || '',
+      shipAddress: document.getElementById('regShipAddressInput').value.trim(),
       items: cartItems.map(it => ({ name: it.name, spec: it.spec, price: it.price, qty: it.qty, amount: it.price*it.qty, note: it.note })),
       subtotal: totals.subtotal, vat: totals.vat, total: totals.total
     };
