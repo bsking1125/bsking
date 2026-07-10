@@ -306,6 +306,7 @@
   <div class="tab-panel" data-panel="outbound-list" style="display:none;">
     <div class="section-head">
       <div><h2>출고 내역</h2><div class="desc">날짜 · 거래처 · 상태로 필터해서 볼 수 있어요.</div></div>
+      <button class="ghost-btn" id="openTransferSummaryBtn">창고이동 정리 보기</button>
     </div>
     <div class="filter-grid" style="margin-bottom:14px;">
       <div class="field"><label>시작일</label><input type="date" id="outFilterFrom"></div>
@@ -438,6 +439,16 @@
 </div>
 
 <!-- 거래명세표 보기/인쇄 -->
+<!-- 창고이동 정리 -->
+<div id="transferSummaryModal" class="center-screen" style="display:none;">
+  <div class="center-box" style="max-width:600px; max-height:85vh; overflow-y:auto;">
+    <div id="transferSummaryContent"></div>
+    <div style="margin-top:16px;">
+      <button class="ghost-btn" id="transferSummaryCloseBtn" style="width:100%;">닫기</button>
+    </div>
+  </div>
+</div>
+
 <div id="invoiceModal" class="center-screen" style="display:none;">
   <div class="center-box" style="max-width:820px; max-height:88vh; overflow-y:auto;">
     <div id="invoiceContent"></div>
@@ -1654,13 +1665,67 @@ function startApp(fbConfig) {
     banner.style.display = 'flex';
     banner.innerHTML =
       '<span>⚠ 아직 창고이동을 안 한 출고가 ' + pending.length + '건 있어요.</span>' +
-      '<button class="ghost-btn" id="jumpToPendingBtn" style="border-color:var(--red); color:var(--red);">지금 확인하기</button>';
-    document.getElementById('jumpToPendingBtn').addEventListener('click', () => {
-      document.getElementById('outFilterStatus').value = 'pending';
-      document.querySelector('.tab-btn[data-tab="outbound-list"]').click();
-      renderOutboundList();
+      '<button class="ghost-btn" id="jumpToPendingBtn" style="border-color:var(--red); color:var(--red);">모아서 확인하기</button>';
+    document.getElementById('jumpToPendingBtn').addEventListener('click', showTransferSummary);
+  }
+
+  /* ============ 창고이동 정리 (내부망에 입력할 때 참고용) ============ */
+  function showTransferSummary() {
+    const pending = outboundList.filter(o => o.status !== 'done');
+    if (!pending.length) { showToast('창고이동 대기 중인 게 없어요.'); return; }
+
+    // 거래처별로 묶고, 같은 거래처로 가는 같은 품목은 수량을 합쳐요
+    const groups = {};
+    pending.forEach(o => {
+      if (!groups[o.partnerName]) groups[o.partnerName] = { items: {}, orderIds: [] };
+      groups[o.partnerName].orderIds.push(o.id);
+      (o.items || []).forEach(it => {
+        const key = it.name + '||' + (it.spec || '');
+        if (!groups[o.partnerName].items[key]) groups[o.partnerName].items[key] = { name: it.name, spec: it.spec || '', qty: 0 };
+        groups[o.partnerName].items[key].qty += it.qty;
+      });
+    });
+
+    let html = '<h1 style="text-align:center; margin-bottom:4px;">창고이동 정리</h1>' +
+      '<div style="text-align:center; color:var(--ink-soft); font-size:12px; margin-bottom:18px;">내부망 전산에 입력하실 때 옆에 띄워두고 보세요. 다 입력하셨으면 거래처별로 완료 처리해주세요.</div>';
+
+    Object.keys(groups).forEach(partnerName => {
+      const g = groups[partnerName];
+      html += '<div style="border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:14px;">' +
+        '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:10px;">' +
+        '<div style="font-size:17px; font-weight:700;">' + escapeHtml(partnerName) + '</div>' +
+        '<button class="primary-btn" data-transfer-done-group="' + escapeHtml(partnerName) + '" style="padding:6px 14px; font-size:12px; flex:none;">이 거래처 전체 완료</button>' +
+        '</div><table style="width:100%;"><tbody>';
+      Object.values(g.items).forEach(it => {
+        html += '<tr><td style="font-size:16px; padding:6px 0;">' + escapeHtml(it.name) +
+          (it.spec ? ' <span style="color:var(--ink-soft); font-size:13px;">(' + escapeHtml(it.spec) + ')</span>' : '') + '</td>' +
+          '<td style="font-size:20px; font-weight:700; text-align:right; padding:6px 0;">' + it.qty + '개</td></tr>';
+      });
+      html += '</tbody></table></div>';
+    });
+
+    document.getElementById('transferSummaryContent').innerHTML = html;
+    document.getElementById('transferSummaryModal').style.display = 'flex';
+    document.getElementById('transferSummaryContent').querySelectorAll('[data-transfer-done-group]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const partnerName = btn.dataset.transferDoneGroup;
+        if (!confirm('"' + partnerName + '" 앞으로 가는 대기 중인 출고를 전부 창고이동 완료 처리할까요?')) return;
+        const ids = groups[partnerName].orderIds;
+        for (const id of ids) {
+          await db.collection('outbound').doc(id).update({
+            status: 'done', completedAt: firebase.firestore.FieldValue.serverTimestamp(), completedBy: auth.currentUser.email
+          });
+          logActivity('outbound', 'done', id, partnerName + ' 앞 출고 창고이동 완료 (모아보기에서 일괄 처리)');
+        }
+        showToast('"' + partnerName + '" 완료 처리했어요.');
+        showTransferSummary();
+      });
     });
   }
+  document.getElementById('transferSummaryCloseBtn').addEventListener('click', () => {
+    document.getElementById('transferSummaryModal').style.display = 'none';
+  });
+  document.getElementById('openTransferSummaryBtn').addEventListener('click', showTransferSummary);
 
   function renderPartnerList() {
     const area = document.getElementById('partnerListArea');
