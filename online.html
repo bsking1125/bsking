@@ -347,6 +347,10 @@
         <div class="dropzone-sub">.csv 또는 .xlsx (수령인 · 수령인 휴대전화 · 수령인 주소(전체) · 상품명(한국어 쇼핑몰) · 수량 · 주문자명 · 배송메시지 칸이 있는 형식)</div>
         <input type="file" id="invoiceFileInput" accept=".csv,.xlsx,.xls">
       </div>
+      <div style="display:flex; align-items:center; gap:10px; margin-top:10px; flex-wrap:wrap;">
+        <button class="ghost-btn" id="chooseInvoiceFolderBtn">📁 저장 폴더 지정</button>
+        <span id="invoiceFolderLabel" style="font-size:12px; color: var(--ink-soft);"></span>
+      </div>
       <div id="invoicePreviewArea" style="margin-top:12px;"></div>
       <button class="primary-btn" id="invoiceExportBtn" style="display:none; margin-top:10px;">송장 엑셀 다운로드</button>
     </div>
@@ -1499,12 +1503,14 @@ function getProductUploadHistoryStats(name) {
 
 const ANOMALY_HIGH_MULT = 2.5; // 평소 평균의 2.5배를 넘으면 "급증"
 const ANOMALY_LOW_MULT = 0.35; // 평소 평균의 35% 밑이면 "급감"
+const ANOMALY_MIN_AVG = 30; // 평소 평균이 이 숫자보다 작은 상품은 이상 감지 자체를 안 해요 (적은 수량은 원래 들쭉날쭉하니까요)
 function detectUploadAnomalies(map) {
   const anomalies = {};
   Object.keys(map).forEach(name => {
     const rowTotal = Object.values(map[name]).reduce((a, b) => a + b, 0);
     const stats = getProductUploadHistoryStats(name);
     if (!stats || stats.days < 2) return; // 비교할 과거 데이터가 부족하면 판단하지 않음
+    if (stats.avg < ANOMALY_MIN_AVG) return; // 평소 수량이 적은 상품은 검사 대상에서 제외
     if (rowTotal >= 3 && rowTotal > stats.avg * ANOMALY_HIGH_MULT) {
       anomalies[name] = { kind: 'high', rowTotal, avg: stats.avg };
     } else if (rowTotal < stats.avg * ANOMALY_LOW_MULT) {
@@ -1762,7 +1768,71 @@ async function handleInvoiceFile(file) {
   }
 }
 
-document.getElementById('invoiceExportBtn').addEventListener('click', () => {
+/* ============ 송장 엑셀 저장 폴더 지정 ============ */
+let invoiceDirHandle = null;
+
+function idbGet(key) {
+  return new Promise((resolve) => {
+    const req = indexedDB.open('invoiceFolderDB', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('handles');
+    req.onsuccess = () => {
+      const tx = req.result.transaction('handles', 'readonly');
+      const getReq = tx.objectStore('handles').get(key);
+      getReq.onsuccess = () => resolve(getReq.result || null);
+      getReq.onerror = () => resolve(null);
+    };
+    req.onerror = () => resolve(null);
+  });
+}
+function idbSet(key, value) {
+  return new Promise((resolve) => {
+    const req = indexedDB.open('invoiceFolderDB', 1);
+    req.onupgradeneeded = () => req.result.createObjectStore('handles');
+    req.onsuccess = () => {
+      const tx = req.result.transaction('handles', 'readwrite');
+      tx.objectStore('handles').put(value, key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    };
+    req.onerror = () => resolve();
+  });
+}
+
+function updateInvoiceFolderLabel(needsPermission) {
+  const el = document.getElementById('invoiceFolderLabel');
+  if (!el) return;
+  if (!invoiceDirHandle) { el.textContent = '지정 안 해두면 평소처럼 다운로드 폴더로 받아요.'; return; }
+  el.textContent = needsPermission
+    ? '📁 "' + invoiceDirHandle.name + '" 폴더로 지정돼 있어요 (다운로드 버튼 누르면 권한을 다시 확인해요)'
+    : '📁 "' + invoiceDirHandle.name + '" 폴더에 자동으로 저장돼요';
+}
+
+async function tryRestoreInvoiceFolder() {
+  if (!window.showDirectoryPicker) return; // 이 브라우저는 지원 안 함 (파이어폭스/사파리 등)
+  const handle = await idbGet('invoiceDir');
+  if (!handle) { updateInvoiceFolderLabel(); return; }
+  try {
+    const perm = await handle.queryPermission({ mode: 'readwrite' });
+    invoiceDirHandle = handle;
+    updateInvoiceFolderLabel(perm !== 'granted');
+  } catch (e) { /* 저장된 핸들이 더 이상 유효하지 않음 */ }
+}
+
+document.getElementById('chooseInvoiceFolderBtn').addEventListener('click', async () => {
+  if (!window.showDirectoryPicker) {
+    showToast('이 브라우저는 폴더 직접 지정을 지원하지 않아요. 크롬이나 엣지에서 사용해주세요.');
+    return;
+  }
+  try {
+    const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    invoiceDirHandle = handle;
+    await idbSet('invoiceDir', handle);
+    updateInvoiceFolderLabel();
+    showToast('저장 폴더를 지정했어요. 이제부터 여기로 바로 저장돼요.');
+  } catch (e) { /* 사용자가 폴더 선택을 취소함 */ }
+});
+
+document.getElementById('invoiceExportBtn').addEventListener('click', async () => {
   if (!invoiceRows.length) return;
   const aoa = [['수령인', '받는분전화번호', '받는분주소(전체, 분할)', '품목명', '보내는 사람']];
   invoiceRows.forEach(r => aoa.push([r.recipient, r.phone, r.address, r.item, r.sender]));
@@ -1770,9 +1840,29 @@ document.getElementById('invoiceExportBtn').addEventListener('click', () => {
   ws['!cols'] = [{wch:10},{wch:14},{wch:40},{wch:30},{wch:20}];
   const wb2 = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb2, ws, 's');
-  XLSX.writeFile(wb2, '송장출력_' + todayStr() + '.xlsx');
+  const filename = '송장출력_' + todayStr() + '.xlsx';
+
+  if (invoiceDirHandle) {
+    try {
+      const perm = await invoiceDirHandle.requestPermission({ mode: 'readwrite' });
+      if (perm === 'granted') {
+        const wbout = XLSX.write(wb2, { bookType: 'xlsx', type: 'array' });
+        const fileHandle = await invoiceDirHandle.getFileHandle(filename, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(new Blob([wbout], { type: 'application/octet-stream' }));
+        await writable.close();
+        updateInvoiceFolderLabel();
+        showToast('"' + invoiceDirHandle.name + '" 폴더에 저장했어요: ' + filename);
+        return;
+      }
+    } catch (e) {
+      showToast('지정한 폴더에 저장하지 못해서, 대신 다운로드로 받아드릴게요.');
+    }
+  }
+  XLSX.writeFile(wb2, filename);
   showToast('송장 엑셀을 다운로드했어요.');
 });
+tryRestoreInvoiceFolder();
 
 function handleFile(file) {
   currentFileName = file.name;
