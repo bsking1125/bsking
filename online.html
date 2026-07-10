@@ -352,7 +352,10 @@
         <span id="invoiceFolderLabel" style="font-size:12px; color: var(--ink-soft);"></span>
       </div>
       <div id="invoicePreviewArea" style="margin-top:12px;"></div>
-      <button class="primary-btn" id="invoiceExportBtn" style="display:none; margin-top:10px;">송장 엑셀 다운로드</button>
+      <div class="add-row" style="margin-top:10px;">
+        <button class="primary-btn" id="invoiceExportBtn" style="display:none;">송장 엑셀 다운로드</button>
+        <button class="ghost-btn" id="cancelInvoiceBtn" style="display:none; color: var(--red); border-color: var(--red);">송장 취소</button>
+      </div>
     </div>
   </div>
 
@@ -1703,8 +1706,10 @@ invoiceFileInput.addEventListener('change', e => { if (e.target.files.length) ha
 async function handleInvoiceFile(file) {
   const previewArea = document.getElementById('invoicePreviewArea');
   const exportBtn = document.getElementById('invoiceExportBtn');
+  const cancelBtn = document.getElementById('cancelInvoiceBtn');
   invoiceRows = [];
   exportBtn.style.display = 'none';
+  cancelBtn.style.display = 'none';
   previewArea.innerHTML = '';
   try {
     const { workbook: wb } = await readFileSmart(file);
@@ -1764,10 +1769,24 @@ async function handleInvoiceFile(file) {
     html += '</tbody></table></div>';
     previewArea.innerHTML = html;
     exportBtn.style.display = '';
+    cancelBtn.style.display = '';
   } catch (err) {
     previewArea.innerHTML = '<div class="empty">파일을 읽는 중 문제가 발생했어요. (' + err.message + ')</div>';
   }
 }
+
+function resetInvoiceState() {
+  invoiceRows = [];
+  document.getElementById('invoicePreviewArea').innerHTML = '';
+  document.getElementById('invoiceExportBtn').style.display = 'none';
+  document.getElementById('cancelInvoiceBtn').style.display = 'none';
+  document.getElementById('invoiceFileInput').value = '';
+}
+document.getElementById('cancelInvoiceBtn').addEventListener('click', () => {
+  if (!confirm('지금 올린 주문서를 취소할까요? 아직 다운로드하지 않았으면 그대로 사라져요.')) return;
+  resetInvoiceState();
+  showToast('송장출력을 취소했어요.');
+});
 
 /* ============ 송장 엑셀 저장 폴더 지정 ============ */
 let invoiceDirHandle = null;
