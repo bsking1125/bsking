@@ -220,6 +220,7 @@
     <button class="tab-btn" data-tab="products">품목 관리</button>
     <button class="tab-btn" data-tab="partners">거래처 관리</button>
     <button class="tab-btn" data-tab="warehouses">창고 등록</button>
+    <button class="tab-btn" data-tab="warehousestatus">창고별 현황</button>
     <button class="tab-btn" data-tab="approvals" id="approvalsTabBtn" style="display:none;">회원 관리<span id="pendingCountBadge"></span></button>
     <button class="tab-btn" data-tab="activitylog" id="activityLogTabBtn" style="display:none;">변경 이력</button>
   </div>
@@ -450,6 +451,14 @@
       </div>
     </div>
     <div id="warehouseListArea"></div>
+  </div>
+
+  <!-- 창고별 현황 -->
+  <div class="tab-panel" data-panel="warehousestatus" style="display:none;">
+    <div class="section-head">
+      <div><h2>창고별 현황</h2><div class="desc">창고이동 완료된 것만 반영돼요. 창고별로 지금까지 얼마나 보냈는지 확인할 수 있어요.</div></div>
+    </div>
+    <div id="warehouseStatusArea"></div>
   </div>
 
 </div>
@@ -1004,6 +1013,60 @@ function startApp(fbConfig) {
     area.querySelectorAll('[data-remove-warehouse]').forEach(btn => btn.addEventListener('click', () => removeWarehouse(btn.dataset.removeWarehouse)));
   }
 
+  function renderWarehouseStatus() {
+    const area = document.getElementById('warehouseStatusArea');
+    if (!area) return;
+    const list = orderedWarehouses();
+    if (!list.length) { area.innerHTML = '<div class="empty">아직 등록된 창고가 없어요. "창고 등록" 탭에서 먼저 등록해주세요.</div>'; return; }
+
+    let html = '';
+    list.forEach(w => {
+      const related = outboundList.filter(o => o.warehouseId === w.id);
+      const doneOrders = related.filter(o => o.status === 'done');
+
+      // 재고내역: 창고이동 완료된 것만 품목별로 누적
+      const stock = {};
+      doneOrders.forEach(o => {
+        (o.items || []).forEach(it => {
+          const key = it.name + '||' + (it.spec || '');
+          if (!stock[key]) stock[key] = { name: it.name, spec: it.spec || '', qty: 0 };
+          stock[key].qty += it.qty;
+        });
+      });
+      const stockRows = Object.values(stock).sort((a, b) => b.qty - a.qty);
+
+      html += '<div style="border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:18px;">' +
+        '<div style="font-size:16px; font-weight:700; margin-bottom:10px;">📦 ' + escapeHtml(w.name) + '</div>';
+
+      html += '<div style="font-size:13px; font-weight:600; color:var(--ink-soft); margin-bottom:6px;">재고내역 (누적, 창고이동 완료 기준)</div>';
+      if (!stockRows.length) {
+        html += '<div class="empty" style="padding:10px 0;">아직 이 창고로 완료된 이동이 없어요.</div>';
+      } else {
+        html += '<table style="margin-bottom:14px;"><thead><tr><th>품목명</th><th>규격</th><th class="num">누적 수량</th></tr></thead><tbody>';
+        stockRows.forEach(r => {
+          html += '<tr><td class="prod-name">' + escapeHtml(r.name) + '</td><td>' + escapeHtml(r.spec || '-') + '</td><td class="num">' + r.qty + '</td></tr>';
+        });
+        html += '</tbody></table>';
+      }
+
+      html += '<div style="font-size:13px; font-weight:600; color:var(--ink-soft); margin-bottom:6px;">거래내역 (' + related.length + '건)</div>';
+      if (!related.length) {
+        html += '<div class="empty" style="padding:10px 0;">거래 내역이 없어요.</div>';
+      } else {
+        const sorted = [...related].sort((a, b) => (b.createdAt && b.createdAt.seconds || 0) - (a.createdAt && a.createdAt.seconds || 0));
+        html += '<table><thead><tr><th>날짜</th><th>거래처</th><th>품목수</th><th class="num">총액</th><th>상태</th></tr></thead><tbody>';
+        sorted.forEach(o => {
+          html += '<tr><td>' + fmtDateOnly(o.createdAt) + '</td><td class="prod-name">' + escapeHtml(o.partnerName) + '</td>' +
+            '<td>' + (o.items || []).length + '건</td><td class="num">' + fmtMoney(o.total) + '</td>' +
+            '<td><span class="status-pill ' + (o.status === 'done' ? 'status-done' : 'status-pending') + '">' + (o.status === 'done' ? '이동완료' : '이동대기') + '</span></td></tr>';
+        });
+        html += '</tbody></table>';
+      }
+      html += '</div>';
+    });
+    area.innerHTML = html;
+  }
+
   /* ============ 품목 마스터 관리 ============ */
   function readProductFormFields() {
     return {
@@ -1470,6 +1533,7 @@ function startApp(fbConfig) {
     }
     if (!cartItems.length) { showToast('담긴 품목이 없어요.'); return; }
     if (cartItems.some(it => !it.qty || it.qty <= 0)) { showToast('수량은 1 이상이어야 해요.'); return; }
+    if (!document.getElementById('regWarehouseSelect').value) { showToast('이동할 창고를 선택해주세요. ("창고 등록" 탭에서 먼저 등록해두셔야 해요)'); return; }
 
     const totals = computeTotals(cartItems);
     const warehouseId = document.getElementById('regWarehouseSelect').value;
@@ -1963,6 +2027,7 @@ function startApp(fbConfig) {
     refreshWarehouseSelect();
     renderPartnerList();
     renderWarehouseList();
+    renderWarehouseStatus();
     renderProductList();
     renderOutboundList();
     renderLedger();
