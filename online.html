@@ -593,6 +593,7 @@ let workbook = null;
 let sheetData = {};
 let selectedSheets = new Set();
 let currentFileName = '';
+let previewSortMode = 'qty'; // 'qty'(수량 많은순, 기본) 또는 'name'(가나다순)
 let pendingAddition = {};
 
 function showToast(msg) {
@@ -2069,6 +2070,7 @@ function renderPreview() {
   pendingAddition = map;
 
   const productNames = Object.keys(map).sort((a,b) => {
+    if (previewSortMode === 'name') return a.localeCompare(b, 'ko');
     const ta = Object.values(map[a]).reduce((s,v)=>s+v,0);
     const tb = Object.values(map[b]).reduce((s,v)=>s+v,0);
     return tb - ta;
@@ -2100,9 +2102,9 @@ function renderPreview() {
     html += '<div style="background:var(--red-tint); border:1px solid var(--red); color:var(--red); border-radius:8px; padding:10px 14px; margin-bottom:10px; font-size:12px;">' +
       '⚠ ' + anomalyCount + '개 상품이 평소 업로드량과 많이 달라요. 오타나 잘못된 파일이 아닌지 확인해주세요. (표에서 빨간 배경으로 표시됨)</div>';
   }
-  html += '<table><thead><tr><th>통합 상품명</th>';
+  html += '<table><thead><tr><th id="previewSortHeader" style="cursor:pointer; user-select:none;" title="클릭하면 정렬 순서가 바뀌어요">통합 상품명 ' + (previewSortMode === 'name' ? '(가나다순 ▲)' : '(수량순 ▼)') + '</th><th class="num">합계</th>';
   stores.forEach(s => { html += '<th class="num">' + escapeHtml(s) + '</th>'; });
-  html += '<th class="num">합계</th></tr></thead><tbody>';
+  html += '</tr></thead><tbody>';
   productNames.forEach(name => {
     const anomaly = anomalies[name];
     html += '<tr' + (anomaly ? ' style="background:var(--red-tint);"' : '') + '><td class="prod-name">' + escapeHtml(name) +
@@ -2111,22 +2113,29 @@ function renderPreview() {
                                   : '급감 · 평소 평균 ' + Math.round(anomaly.avg) + '개') +
         '</div>' : '') +
       '</td>';
-    let rowTotal = 0;
+    const rowTotal = Object.values(map[name]).reduce((a, b) => a + b, 0);
+    html += '<td class="num">+' + rowTotal + '</td>';
     stores.forEach(s => {
       const v = map[name][s] || 0;
-      rowTotal += v;
       html += '<td class="num">' + (v ? '+' + v : '-') + '</td>';
     });
-    html += '<td class="num">+' + rowTotal + '</td></tr>';
+    html += '</tr>';
   });
-  html += '</tbody><tfoot><tr><td>합계</td>';
+  html += '</tbody><tfoot><tr><td>합계</td><td class="num">+' + grandTotal + '</td>';
   stores.forEach(s => {
     const colTotal = productNames.reduce((sum, n) => sum + (map[n][s] || 0), 0);
     html += '<td class="num">+' + colTotal + '</td>';
   });
-  html += '<td class="num">+' + grandTotal + '</td></tr></tfoot></table>';
+  html += '</tr></tfoot></table>';
   document.getElementById('previewTableArea').innerHTML = html;
   applyBtn.disabled = unmapped.length > 0;
+  const sortHeader = document.getElementById('previewSortHeader');
+  if (sortHeader) {
+    sortHeader.addEventListener('click', () => {
+      previewSortMode = previewSortMode === 'qty' ? 'name' : 'qty';
+      renderPreview();
+    });
+  }
 }
 
 function renderUnmappedList(unmapped, rawQty) {
