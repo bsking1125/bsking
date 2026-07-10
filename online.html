@@ -1475,7 +1475,10 @@ document.getElementById('asOfSearchBtn').addEventListener('click', () => {
 
 const UPLOAD_LOG_MANUAL_SOURCES = ['일괄 입력', '직접 추가', '수동 수정', '엑셀 초기 입력'];
 function isUploadLogEntry(h) {
-  return h.type === 'add' && !UPLOAD_LOG_MANUAL_SOURCES.includes(h.source);
+  if (h.type !== 'add') return false;
+  if (UPLOAD_LOG_MANUAL_SOURCES.includes(h.source)) return false;
+  if (String(h.source || '').startsWith('스토어 합치기')) return false; // 스토어 합치기는 업로드가 아니라서 여기 안 잡혀야 해요
+  return true;
 }
 
 // 상품별로 지금까지의 "판매내역 업로드" 반영량을 날짜별로 묶어서 평균을 내요.
