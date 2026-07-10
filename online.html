@@ -255,9 +255,9 @@
     <div id="mergeStoreBox" style="display:none; margin-bottom: 14px; background: var(--amber-tint); border:1px solid var(--amber); border-radius:8px; padding:12px;">
       <div class="desc" style="color:var(--amber); margin-bottom:8px;">예: "스토어"랑 "스마트스토어"가 같은 곳인데 실수로 따로 생겼을 때, 하나로 합쳐요. 합쳐지는 쪽(원본)의 재고가 대상 스토어로 전부 옮겨지고, 원본은 목록에서 사라져요.</div>
       <div class="add-row">
-        <select id="mergeFromStoreSelect"><option value="">합칠 스토어 (없어질 쪽)</option></select>
-        <span style="color:var(--ink-soft); font-size:13px;">→</span>
         <select id="mergeToStoreSelect"><option value="">대상 스토어 (남을 쪽)</option></select>
+        <span style="color:var(--ink-soft); font-size:13px;">←</span>
+        <select id="mergeFromStoreSelect"><option value="">합칠 스토어 (없어질 쪽)</option></select>
         <button class="primary-btn" id="mergeStoreBtn">합치기</button>
       </div>
     </div>
