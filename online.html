@@ -339,6 +339,19 @@
       </div>
       <div class="table-scroll" id="previewTableArea"></div>
     </div>
+
+    <div style="margin-top:34px; border-top:1px solid var(--line); padding-top:22px;">
+      <div class="section-head">
+        <div><h2>송장 출력</h2><div class="desc">주문서(카페24 주문서 다운로드 등) 파일을 올리면 택배사 업로드용 엑셀로 바로 바꿔드려요. 위 재고 반영이랑은 별개 기능이에요.</div></div>
+      </div>
+      <div class="dropzone" id="invoiceDropzone">
+        <div class="dropzone-title">주문서 파일을 여기로 끌어다 놓거나 클릭하세요</div>
+        <div class="dropzone-sub">.csv 또는 .xlsx (수령인 · 주소 · 주문상품명 · 수량 · 주문자 칸이 있는 주문서 형식)</div>
+        <input type="file" id="invoiceFileInput" accept=".csv,.xlsx,.xls">
+      </div>
+      <div id="invoicePreviewArea" style="margin-top:12px;"></div>
+      <button class="primary-btn" id="invoiceExportBtn" style="display:none; margin-top:10px;">송장 엑셀 다운로드</button>
+    </div>
   </div>
 
   <div class="tab-panel" data-panel="uploadlog" style="display:none;">
@@ -1575,6 +1588,143 @@ dropzone.addEventListener('drop', e => {
   if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
 });
 fileInput.addEventListener('change', e => { if (e.target.files.length) handleFile(e.target.files[0]); });
+
+/* ============ 송장 출력 ============ */
+const INVOICE_HEADER_ALIASES = {
+  recipient: ['수령인'],
+  mobile: ['핸드폰'],
+  phoneFallback: ['전화번호', '전화'],
+  address: ['주소'],
+  productName: ['주문상품명'],
+  qty: ['수량'],
+  orderer: ['주문자'],
+  note: ['비고']
+};
+let invoiceRows = [];
+
+// 한국 쇼핑몰 CSV는 UTF-8(BOM 있음)이거나 EUC-KR(CP949)인 경우가 많아서, 둘 다 알아서 시도해요.
+async function readFileSmart(file) {
+  const buf = await file.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  if (/\.(xlsx|xls)$/i.test(file.name)) {
+    return { type: 'workbook', workbook: XLSX.read(buf, { type: 'array' }) };
+  }
+  let text;
+  if (bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF) {
+    text = new TextDecoder('utf-8').decode(bytes); // UTF-8 BOM
+  } else {
+    try { text = new TextDecoder('euc-kr', { fatal: true }).decode(bytes); }
+    catch (e) { text = new TextDecoder('utf-8').decode(bytes); }
+  }
+  return { type: 'workbook', workbook: XLSX.read(text, { type: 'string' }) };
+}
+
+function findInvoiceHeaderRow(rows) {
+  for (let i = 0; i < Math.min(rows.length, 10); i++) {
+    const row = (rows[i] || []).map(c => String(c || '').trim());
+    if (row.includes('수령인') && row.includes('주소') && row.includes('주문상품명')) return i;
+  }
+  return -1;
+}
+function findCol(headerRow, aliases) {
+  for (const alias of aliases) {
+    const idx = headerRow.indexOf(alias);
+    if (idx !== -1) return idx;
+  }
+  return -1;
+}
+
+const invoiceDropzone = document.getElementById('invoiceDropzone');
+const invoiceFileInput = document.getElementById('invoiceFileInput');
+invoiceDropzone.addEventListener('click', () => invoiceFileInput.click());
+invoiceDropzone.addEventListener('dragover', e => { e.preventDefault(); invoiceDropzone.classList.add('drag'); });
+invoiceDropzone.addEventListener('dragleave', () => invoiceDropzone.classList.remove('drag'));
+invoiceDropzone.addEventListener('drop', e => {
+  e.preventDefault(); invoiceDropzone.classList.remove('drag');
+  if (e.dataTransfer.files.length) handleInvoiceFile(e.dataTransfer.files[0]);
+});
+invoiceFileInput.addEventListener('change', e => { if (e.target.files.length) handleInvoiceFile(e.target.files[0]); });
+
+async function handleInvoiceFile(file) {
+  const previewArea = document.getElementById('invoicePreviewArea');
+  const exportBtn = document.getElementById('invoiceExportBtn');
+  invoiceRows = [];
+  exportBtn.style.display = 'none';
+  previewArea.innerHTML = '';
+  try {
+    const { workbook: wb } = await readFileSmart(file);
+    const ws = wb.Sheets[wb.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+    const headerIdx = findInvoiceHeaderRow(rows);
+    if (headerIdx === -1) {
+      previewArea.innerHTML = '<div class="empty">"수령인 · 주소 · 주문상품명" 칸이 있는 주문서 형식이 아닌 것 같아요. 파일을 확인해주세요.</div>';
+      return;
+    }
+    const headerRow = rows[headerIdx].map(c => String(c || '').trim());
+    const col = {
+      recipient: findCol(headerRow, INVOICE_HEADER_ALIASES.recipient),
+      mobile: findCol(headerRow, INVOICE_HEADER_ALIASES.mobile),
+      phoneFallback: findCol(headerRow, INVOICE_HEADER_ALIASES.phoneFallback),
+      address: findCol(headerRow, INVOICE_HEADER_ALIASES.address),
+      productName: findCol(headerRow, INVOICE_HEADER_ALIASES.productName),
+      qty: findCol(headerRow, INVOICE_HEADER_ALIASES.qty),
+      orderer: findCol(headerRow, INVOICE_HEADER_ALIASES.orderer),
+      note: findCol(headerRow, INVOICE_HEADER_ALIASES.note)
+    };
+
+    invoiceRows = [];
+    for (let r = headerIdx + 1; r < rows.length; r++) {
+      const row = rows[r];
+      if (!row) continue;
+      const recipient = String(row[col.recipient] || '').trim();
+      if (!recipient) continue;
+      const mobile = col.mobile !== -1 ? String(row[col.mobile] || '').trim() : '';
+      const phoneFallback = col.phoneFallback !== -1 ? String(row[col.phoneFallback] || '').trim() : '';
+      const address = col.address !== -1 ? String(row[col.address] || '').trim() : '';
+      const productName = col.productName !== -1 ? String(row[col.productName] || '').trim() : '';
+      const qty = col.qty !== -1 ? String(row[col.qty] || '').trim() : '';
+      const orderer = col.orderer !== -1 ? String(row[col.orderer] || '').trim() : '';
+      const note = col.note !== -1 ? String(row[col.note] || '').trim() : '';
+
+      invoiceRows.push({
+        recipient,
+        phone: mobile || phoneFallback,
+        address,
+        item: (productName + (qty ? ' ' + qty : '')).trim(),
+        sender: note ? (orderer + ' ' + note) : orderer
+      });
+    }
+
+    if (!invoiceRows.length) {
+      previewArea.innerHTML = '<div class="empty">추출할 주문이 없어요 (수령인이 빈 줄은 건너뛰어요).</div>';
+      return;
+    }
+
+    let html = '<div class="desc" style="margin-bottom:8px;">' + invoiceRows.length + '건을 찾았어요. 확인 후 아래 버튼으로 내려받아주세요.</div>';
+    html += '<div class="table-scroll"><table><thead><tr><th>수령인</th><th>받는분전화번호</th><th>받는분주소</th><th>품목명</th><th>보내는 사람</th></tr></thead><tbody>';
+    invoiceRows.forEach(r => {
+      html += '<tr><td class="prod-name">' + escapeHtml(r.recipient) + '</td><td>' + escapeHtml(r.phone||'-') + '</td>' +
+        '<td>' + escapeHtml(r.address||'-') + '</td><td>' + escapeHtml(r.item||'-') + '</td><td>' + escapeHtml(r.sender||'-') + '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+    previewArea.innerHTML = html;
+    exportBtn.style.display = '';
+  } catch (err) {
+    previewArea.innerHTML = '<div class="empty">파일을 읽는 중 문제가 발생했어요. (' + err.message + ')</div>';
+  }
+}
+
+document.getElementById('invoiceExportBtn').addEventListener('click', () => {
+  if (!invoiceRows.length) return;
+  const aoa = [['수령인', '받는분전화번호', '받는분주소(전체, 분할)', '품목명', '보내는 사람']];
+  invoiceRows.forEach(r => aoa.push([r.recipient, r.phone, r.address, r.item, r.sender]));
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  ws['!cols'] = [{wch:10},{wch:14},{wch:40},{wch:30},{wch:20}];
+  const wb2 = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb2, ws, 's');
+  XLSX.writeFile(wb2, '송장출력_' + todayStr() + '.xlsx');
+  showToast('송장 엑셀을 다운로드했어요.');
+});
 
 function handleFile(file) {
   currentFileName = file.name;
