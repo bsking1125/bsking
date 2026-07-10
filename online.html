@@ -227,7 +227,15 @@
       <div class="title" style="margin-bottom:0;">미결 재고 관리</div>
       <div class="subtitle">온라인에서 나간 주문(미결)만큼 스토어별로 재고가 쌓이고, 매출처리(정산 확정)되면 그만큼 빠집니다.</div>
     </div>
-    <button class="ghost-btn" id="resetAllBtn" style="color: var(--red); border-color: var(--red); flex:none;">전체 초기화</button>
+    <div id="adminActionBar" style="display:none; gap:8px; flex-wrap:wrap; justify-content:flex-end;">
+      <button class="ghost-btn" id="resetAllBtn" style="color: var(--red); border-color: var(--red);">전체 초기화</button>
+      <button class="ghost-btn" id="toggleMergeStore">스토어 합치기</button>
+      <button class="ghost-btn" id="toggleAddProduct">+ 상품 직접 추가</button>
+      <button class="ghost-btn" id="toggleBulkAdd">+ 일괄 입력</button>
+      <button class="ghost-btn" id="toggleMatrixAdd">+ 엑셀로 총 재고 불러오기</button>
+      <button class="ghost-btn" id="toggleDeleteMode" style="color: var(--red); border-color: var(--red);">삭제</button>
+      <button class="primary-btn" id="confirmDeleteSelectedBtn" style="display:none; background:var(--red);">선택 삭제</button>
+    </div>
   </div>
   <div class="logic-note">총 재고 = 아직 정산되지 않은 미결 수량 누적치입니다. 스토어(채널)별로 따로 쌓이기 때문에, 어느 사이트에서 문제가 생겼는지 바로 확인할 수 있어요.</div>
 
@@ -244,10 +252,6 @@
   <div class="tab-panel" data-panel="stock">
     <div class="section-head">
       <div><h2>현재 총 재고 (미결) - 스토어별</h2><div class="desc">상품별 · 스토어별 누적 미결 수량</div></div>
-      <div style="display:flex; gap:8px;">
-        <button class="ghost-btn" id="toggleMergeStore">스토어 합치기</button>
-        <button class="ghost-btn" id="toggleAddProduct">+ 상품 직접 추가</button>
-      </div>
     </div>
     <div class="add-row" style="margin-top:0; margin-bottom: 12px;">
       <input type="text" id="stockSearchInput" placeholder="상품명으로 검색 (예: 침향원)">
@@ -270,10 +274,6 @@
         <button class="primary-btn" id="addProductBtn">추가</button>
       </div>
     </div>
-    <div class="section-head" style="margin-top:8px;">
-      <div class="desc" style="margin:0;">엑셀에 정리해둔 재고가 있다면, 한 번에 붙여넣어서 등록할 수 있어요</div>
-      <button class="ghost-btn" id="toggleBulkAdd">+ 일괄 입력</button>
-    </div>
     <div id="bulkAddBox" style="display:none; margin-bottom: 14px;">
       <div style="font-size:12px; color: var(--ink-soft); margin-bottom:8px;">
         한 줄에 하나씩, <b>상품명 [탭] 스토어 [탭] 수량</b> 순서로 붙여넣어주세요. (엑셀에서 세 칸을 복사해서 그대로 붙여넣으면 돼요)<br>
@@ -286,11 +286,8 @@
         <button class="primary-btn" id="bulkAddBtn">일괄 등록</button>
       </div>
     </div>
-    <div class="section-head" style="margin-top:8px;">
-      <div class="desc" style="margin:0;">상품명(세로) × 거래처(가로) 형태의 엑셀이 있다면 통째로 불러올 수 있어요</div>
-      <button class="ghost-btn" id="toggleMatrixAdd">+ 엑셀로 총 재고 불러오기</button>
-    </div>
     <div id="matrixAddBox" style="display:none; margin-bottom: 14px;">
+      <div class="desc" style="margin-bottom:8px;">상품명(세로) × 거래처(가로) 형태의 엑셀이 있다면 통째로 불러올 수 있어요</div>
       <input type="file" id="matrixFileInput" accept=".xlsx,.xls" style="margin-bottom:10px;">
       <div id="matrixConfigArea"></div>
     </div>
@@ -433,6 +430,7 @@ firebase.initializeApp(FIREBASE_CONFIG);
 const auth = firebase.auth();
 const db = firebase.firestore();
 const ADMIN_EMAILS = ['qudtjd2222@gmail.com'];
+let currentUserIsAdmin = false;
 function isAdminEmail(email) { return !!email && ADMIN_EMAILS.includes(email); }
 auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL).catch(() => {});
 
@@ -536,7 +534,9 @@ function enterOnlineApp(user) {
   document.getElementById('pendingGate').style.display = 'none';
   document.getElementById('loginGate').style.display = 'none';
   document.getElementById('appWrap').style.display = '';
-  document.getElementById('currentUserEmailOnline').textContent = user.email + (isAdminEmail(user.email) ? ' (관리자)' : '');
+  currentUserIsAdmin = isAdminEmail(user.email);
+  document.getElementById('currentUserEmailOnline').textContent = user.email + (currentUserIsAdmin ? ' (관리자)' : '');
+  document.getElementById('adminActionBar').style.display = currentUserIsAdmin ? 'flex' : 'none';
   startFirestoreSync();
 }
 
@@ -721,8 +721,8 @@ function addProduct(name, store, qty) {
   saveData(); renderAll();
   showToast(name + ' 추가됨');
 }
-function removeProduct(name) {
-  if (!confirm('"' + name + '" 상품을 목록에서 삭제할까요? 기록은 남습니다.')) return;
+function removeProduct(name, skipConfirm) {
+  if (!skipConfirm && !confirm('"' + name + '" 상품을 목록에서 삭제할까요? 기록은 남습니다.')) return;
   const p = data.products[name];
   if (p && p.stores) {
     const stamp = nowStamp();
@@ -852,6 +852,16 @@ function renderMappingTable() {
 }
 
 let stockSearchTerm = '';
+let deleteMode = false;
+let selectedForDelete = new Set();
+
+function updateDeleteBar() {
+  const btn = document.getElementById('confirmDeleteSelectedBtn');
+  if (!btn) return;
+  btn.style.display = deleteMode ? '' : 'none';
+  btn.textContent = selectedForDelete.size ? ('선택 ' + selectedForDelete.size + '개 삭제') : '선택 삭제';
+  btn.disabled = selectedForDelete.size === 0;
+}
 function renderStockTable() {
   const area = document.getElementById('stockTableArea');
   const stores = allStores();
@@ -876,7 +886,7 @@ function renderStockTable() {
       '<span class="arrow-btn arrow-btn-danger" data-store-remove="' + escapeHtml(s) + '" title="이 스토어 삭제">×</span>' +
       '</div></th>';
   });
-  html += '<th></th></tr></thead><tbody>';
+  html += '<th style="width:50px; text-align:center;">' + (deleteMode ? '<input type="checkbox" id="selectAllDeleteCheck">' : '') + '</th></tr></thead><tbody>';
   names.forEach((name, idx) => {
     const p = data.products[name];
     html += '<tr><td class="num" style="color:var(--ink-soft);">' +
@@ -891,7 +901,7 @@ function renderStockTable() {
       const v = (p.stores && p.stores[s]) || 0;
       html += '<td class="num editable-cell" data-product="' + escapeHtml(name) + '" data-store="' + escapeHtml(s) + '" title="클릭해서 직접 수정">' + (v ? v : '-') + '</td>';
     });
-    html += '<td class="row-actions"><button class="remove" data-remove="' + escapeHtml(name) + '">삭제</button></td></tr>';
+    html += '<td style="text-align:center;">' + (deleteMode ? '<input type="checkbox" class="del-check" data-name="' + escapeHtml(name) + '" ' + (selectedForDelete.has(name) ? 'checked' : '') + '>' : '') + '</td></tr>';
   });
   html += '</tbody>';
   let grandTotal = 0;
@@ -903,9 +913,21 @@ function renderStockTable() {
   html += '<tfoot><tr><td></td><td>합계</td><td class="num">' + grandTotal + '</td>' + storeTotalsHtml + '<td></td></tr></tfoot>';
   html += '</table>';
   area.innerHTML = html;
-  area.querySelectorAll('[data-remove]').forEach(btn => {
-    btn.addEventListener('click', e => removeProduct(e.target.dataset.remove));
+  area.querySelectorAll('.del-check').forEach(cb => {
+    cb.addEventListener('change', () => {
+      if (cb.checked) selectedForDelete.add(cb.dataset.name);
+      else selectedForDelete.delete(cb.dataset.name);
+      updateDeleteBar();
+    });
   });
+  const selectAllCb = document.getElementById('selectAllDeleteCheck');
+  if (selectAllCb) {
+    selectAllCb.addEventListener('change', () => {
+      names.forEach(n => { if (selectAllCb.checked) selectedForDelete.add(n); else selectedForDelete.delete(n); });
+      renderStockTable();
+      updateDeleteBar();
+    });
+  }
   area.querySelectorAll('[data-prod-move]').forEach(btn => {
     btn.addEventListener('click', e => {
       e.stopPropagation();
@@ -1335,6 +1357,25 @@ document.getElementById('resetAllBtn').addEventListener('click', () => {
   data = { products: {}, log: [], mappings: {}, formats: {}, productOrder: [], storeOrder: [] };
   saveData(); renderAll();
   showToast('전체 초기화했어요.');
+});
+
+document.getElementById('toggleDeleteMode').addEventListener('click', () => {
+  deleteMode = !deleteMode;
+  document.getElementById('toggleDeleteMode').textContent = deleteMode ? '삭제 취소' : '삭제';
+  if (!deleteMode) selectedForDelete.clear();
+  renderStockTable();
+  updateDeleteBar();
+});
+document.getElementById('confirmDeleteSelectedBtn').addEventListener('click', async () => {
+  if (!selectedForDelete.size) return;
+  const names = [...selectedForDelete];
+  if (!confirm(names.length + '개 상품을 삭제할까요?\n\n' + names.slice(0, 5).join(', ') + (names.length > 5 ? ' 외 ' + (names.length - 5) + '개' : '') + '\n재고가 있으면 모두 0으로 차감 처리되고, 기록에 남아요.')) return;
+  names.forEach(name => removeProduct(name, true));
+  selectedForDelete.clear();
+  deleteMode = false;
+  document.getElementById('toggleDeleteMode').textContent = '삭제';
+  saveData(); renderAll();
+  showToast(names.length + '개 상품을 삭제했어요.');
 });
 
 document.getElementById('toggleAddProduct').addEventListener('click', () => {
