@@ -219,6 +219,7 @@
     <button class="tab-btn" data-tab="ledger">전체 품목 기록</button>
     <button class="tab-btn" data-tab="products">품목 관리</button>
     <button class="tab-btn" data-tab="partners">거래처 관리</button>
+    <button class="tab-btn" data-tab="warehouses">창고 등록</button>
     <button class="tab-btn" data-tab="approvals" id="approvalsTabBtn" style="display:none;">회원 관리<span id="pendingCountBadge"></span></button>
     <button class="tab-btn" data-tab="activitylog" id="activityLogTabBtn" style="display:none;">변경 이력</button>
   </div>
@@ -271,6 +272,7 @@
         <div class="field" style="flex:1; min-width:160px;"><label>입고담당자 연락처</label><input type="text" id="regReceiverPhoneInput"></div>
       </div>
       <div class="field"><label>배송지 주소</label><input type="text" id="regShipAddressInput"></div>
+      <div class="field"><label>이동할 창고 (내부망 전산 기준)</label><select id="regWarehouseSelect"><option value="">선택 안 함</option></select></div>
     </div>
 
     <div class="section-head"><div><h2 style="font-size:14px;">품목 담기</h2><div class="desc">품목명이나 바코드 일부를 입력하면 검색돼요. 없는 품목이면 "품목 관리" 탭에서 먼저 등록해주세요.</div></div></div>
@@ -434,6 +436,20 @@
       <button class="primary-btn" id="addPartnerBtn">거래처 추가</button>
     </div>
     <div id="partnerListArea"></div>
+  </div>
+
+  <!-- 창고 등록 -->
+  <div class="tab-panel" data-panel="warehouses" style="display:none;">
+    <div class="section-head">
+      <div><h2>창고 등록</h2><div class="desc">내부망 전산에 있는 창고 이름을 그대로 등록해두면, 출고 등록할 때 어느 창고로 이동시켰는지 고를 수 있어요.</div></div>
+    </div>
+    <div class="card" style="margin-bottom:20px;">
+      <div class="add-row">
+        <input type="text" id="warehouseNameInput" placeholder="창고명 (예: 대리점1호창고)">
+        <button class="primary-btn" id="addWarehouseBtn">창고 추가</button>
+      </div>
+    </div>
+    <div id="warehouseListArea"></div>
   </div>
 
 </div>
@@ -741,12 +757,14 @@ function startApp(fbConfig) {
 
   /* ============ 3단계: 실시간 데이터 ============ */
   let partners = [];      // [{id, name, bizNo, ceo, address, contact, shipTo, receiver, receiverPhone, shipAddress, order}]
+  let warehouses = [];    // [{id, name, order}]
   let productMaster = []; // [{id, name, spec, barcode, defaultPrice, order}]
   let outboundList = [];  // [{id, partnerName, items:[...], subtotal, vat, total, status, createdAt, createdBy, ...}]
   let company = null;     // 우리 회사 정보 (공급자)
   let cartItems = [];     // 출고 등록 화면에서 지금 담고 있는 품목들 (아직 저장 전)
 
   function orderedPartners() { return [...partners].sort((a,b) => (a.order||0) - (b.order||0)); }
+  function orderedWarehouses() { return [...warehouses].sort((a,b) => (a.order||0) - (b.order||0)); }
   function orderedProducts() { return [...productMaster].sort((a,b) => (a.order||0) - (b.order||0)); }
   function partnerName(id) { const p = partners.find(p => p.id === id); return p ? p.name : '(삭제된 거래처)'; }
   function fmtMoney(n) { return Math.round(n || 0).toLocaleString('ko-KR'); }
@@ -782,6 +800,11 @@ function startApp(fbConfig) {
       partners = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       renderAll();
     }, err => showToast('거래처 정보를 불러오지 못했어요: ' + err.message));
+
+    db.collection('warehouses').onSnapshot(snap => {
+      warehouses = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderAll();
+    }, err => showToast('창고 정보를 불러오지 못했어요: ' + err.message));
 
     db.collection('products').onSnapshot(snap => {
       productMaster = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -931,6 +954,54 @@ function startApp(fbConfig) {
     await db.collection('partners').doc(id).delete();
     logActivity('partner', 'delete', id, name + ' 거래처 삭제');
     showToast('"' + name + '" 거래처를 삭제했어요.');
+  }
+
+  /* ============ 창고 등록 / 관리 ============ */
+  function warehouseName(id) { const w = warehouses.find(w => w.id === id); return w ? w.name : ''; }
+
+  document.getElementById('addWarehouseBtn').addEventListener('click', async () => {
+    const name = document.getElementById('warehouseNameInput').value.trim();
+    if (!name) { showToast('창고명을 입력해주세요.'); return; }
+    await db.collection('warehouses').add({ name, order: nextOrder(warehouses), createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+    logActivity('warehouse', 'create', null, name + ' 창고 등록');
+    document.getElementById('warehouseNameInput').value = '';
+    showToast('"' + name + '" 창고를 등록했어요.');
+  });
+
+  async function editWarehouse(id) {
+    const w = warehouses.find(w => w.id === id);
+    if (!w) return;
+    const name = prompt('창고명', w.name);
+    if (name === null || !name.trim()) return;
+    await db.collection('warehouses').doc(id).update({ name: name.trim() });
+    logActivity('warehouse', 'update', id, w.name + ' → ' + name.trim());
+    showToast('창고명을 수정했어요.');
+  }
+
+  async function removeWarehouse(id) {
+    if (!currentUserIsAdmin) { showToast('삭제는 관리자만 할 수 있어요.'); return; }
+    const name = warehouseName(id);
+    if (!confirm('"' + name + '" 창고를 삭제할까요? (이미 등록된 출고 내역은 그대로 남아요)')) return;
+    await db.collection('warehouses').doc(id).delete();
+    logActivity('warehouse', 'delete', id, name + ' 창고 삭제');
+    showToast('"' + name + '" 창고를 삭제했어요.');
+  }
+
+  function renderWarehouseList() {
+    const area = document.getElementById('warehouseListArea');
+    if (!area) return;
+    const list = orderedWarehouses();
+    if (!list.length) { area.innerHTML = '<div class="empty">아직 등록된 창고가 없어요.</div>'; return; }
+    let html = '<table><thead><tr><th>창고명</th><th></th></tr></thead><tbody>';
+    list.forEach(w => {
+      html += '<tr><td class="prod-name">' + escapeHtml(w.name) + '</td>' +
+        '<td class="row-actions"><button data-edit-warehouse="' + w.id + '">수정</button>' +
+        (currentUserIsAdmin ? ' <button data-remove-warehouse="' + w.id + '">삭제</button>' : '') + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    area.innerHTML = html;
+    area.querySelectorAll('[data-edit-warehouse]').forEach(btn => btn.addEventListener('click', () => editWarehouse(btn.dataset.editWarehouse)));
+    area.querySelectorAll('[data-remove-warehouse]').forEach(btn => btn.addEventListener('click', () => removeWarehouse(btn.dataset.removeWarehouse)));
   }
 
   /* ============ 품목 마스터 관리 ============ */
@@ -1156,6 +1227,13 @@ function startApp(fbConfig) {
     document.getElementById('outFilterPartner').innerHTML = '<option value="">전체 거래처</option>' + list.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
     document.getElementById('ledgerFilterPartner').innerHTML = '<option value="">전체 거래처</option>' + list.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
   }
+  function refreshWarehouseSelect() {
+    const list = orderedWarehouses();
+    const selected = document.getElementById('regWarehouseSelect').value;
+    const opts = '<option value="">선택 안 함</option>' + list.map(w => '<option value="' + w.id + '">' + escapeHtml(w.name) + '</option>').join('');
+    document.getElementById('regWarehouseSelect').innerHTML = opts;
+    document.getElementById('regWarehouseSelect').value = selected;
+  }
 
   document.getElementById('regPartnerSelect').addEventListener('change', () => {
     const id = document.getElementById('regPartnerSelect').value;
@@ -1331,6 +1409,7 @@ function startApp(fbConfig) {
     document.getElementById('manualPartnerFields').style.display = 'none';
     ['manualPartnerNameInput','manualPartnerBizNoInput','manualPartnerCeoInput','manualPartnerAddressInput','manualPartnerContactInput',
      'regShipToInput','regReceiverInput','regReceiverPhoneInput','regShipAddressInput'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('regWarehouseSelect').value = '';
     editingOutboundId = null;
     document.getElementById('editModeNotice').style.display = 'none';
     document.getElementById('outRegisterBtn').textContent = '출고 등록';
@@ -1361,6 +1440,7 @@ function startApp(fbConfig) {
     document.getElementById('regReceiverInput').value = o.receiver || '';
     document.getElementById('regReceiverPhoneInput').value = o.receiverPhone || '';
     document.getElementById('regShipAddressInput').value = o.shipAddress || '';
+    document.getElementById('regWarehouseSelect').value = o.warehouseId || '';
     cartItems = (o.items || []).map(it => ({ productId: null, name: it.name, spec: it.spec, price: it.price, qty: it.qty, note: it.note || '' }));
     renderCart();
     document.querySelector('.tab-btn[data-tab="register"]').click();
@@ -1392,12 +1472,15 @@ function startApp(fbConfig) {
     if (cartItems.some(it => !it.qty || it.qty <= 0)) { showToast('수량은 1 이상이어야 해요.'); return; }
 
     const totals = computeTotals(cartItems);
+    const warehouseId = document.getElementById('regWarehouseSelect').value;
     const order = {
       ...partnerInfo,
       shipTo: document.getElementById('regShipToInput').value.trim(),
       receiver: document.getElementById('regReceiverInput').value.trim(),
       receiverPhone: document.getElementById('regReceiverPhoneInput').value.trim(),
       shipAddress: document.getElementById('regShipAddressInput').value.trim(),
+      warehouseId: warehouseId || null,
+      warehouseName: warehouseId ? warehouseName(warehouseId) : '',
       items: cartItems.map(it => ({ name: it.name, spec: it.spec, price: it.price, qty: it.qty, amount: it.price*it.qty, note: it.note })),
       subtotal: totals.subtotal, vat: totals.vat, total: totals.total
     };
@@ -1434,6 +1517,7 @@ function startApp(fbConfig) {
       document.getElementById('manualPartnerFields').style.display = 'none';
       ['manualPartnerNameInput','manualPartnerBizNoInput','manualPartnerCeoInput','manualPartnerAddressInput','manualPartnerContactInput',
        'regShipToInput','regReceiverInput','regReceiverPhoneInput','regShipAddressInput'].forEach(id => document.getElementById(id).value = '');
+      document.getElementById('regWarehouseSelect').value = '';
       document.getElementById('lastRegisteredPartner').textContent = partnerInfo.partnerName;
       document.getElementById('lastRegisteredArea').style.display = 'block';
       showToast('출고 등록 완료했어요.');
@@ -1674,27 +1758,29 @@ function startApp(fbConfig) {
     const pending = outboundList.filter(o => o.status !== 'done');
     if (!pending.length) { showToast('창고이동 대기 중인 게 없어요.'); return; }
 
-    // 거래처별로 묶고, 같은 거래처로 가는 같은 품목은 수량을 합쳐요
+    // 거래처+창고 조합으로 묶고, 같은 조합으로 가는 같은 품목은 수량을 합쳐요
     const groups = {};
     pending.forEach(o => {
-      if (!groups[o.partnerName]) groups[o.partnerName] = { items: {}, orderIds: [] };
-      groups[o.partnerName].orderIds.push(o.id);
+      const key = o.partnerName + '||' + (o.warehouseName || '');
+      if (!groups[key]) groups[key] = { partnerName: o.partnerName, warehouseName: o.warehouseName || '', items: {}, orderIds: [] };
+      groups[key].orderIds.push(o.id);
       (o.items || []).forEach(it => {
-        const key = it.name + '||' + (it.spec || '');
-        if (!groups[o.partnerName].items[key]) groups[o.partnerName].items[key] = { name: it.name, spec: it.spec || '', qty: 0 };
-        groups[o.partnerName].items[key].qty += it.qty;
+        const itemKey = it.name + '||' + (it.spec || '');
+        if (!groups[key].items[itemKey]) groups[key].items[itemKey] = { name: it.name, spec: it.spec || '', qty: 0 };
+        groups[key].items[itemKey].qty += it.qty;
       });
     });
 
     let html = '<h1 style="text-align:center; margin-bottom:4px;">창고이동 정리</h1>' +
-      '<div style="text-align:center; color:var(--ink-soft); font-size:12px; margin-bottom:18px;">내부망 전산에 입력하실 때 옆에 띄워두고 보세요. 다 입력하셨으면 거래처별로 완료 처리해주세요.</div>';
+      '<div style="text-align:center; color:var(--ink-soft); font-size:12px; margin-bottom:18px;">내부망 전산에 입력하실 때 옆에 띄워두고 보세요. 다 입력하셨으면 완료 처리해주세요.</div>';
 
-    Object.keys(groups).forEach(partnerName => {
-      const g = groups[partnerName];
+    Object.keys(groups).forEach(key => {
+      const g = groups[key];
       html += '<div style="border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:14px;">' +
-        '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:10px;">' +
-        '<div style="font-size:17px; font-weight:700;">' + escapeHtml(partnerName) + '</div>' +
-        '<button class="primary-btn" data-transfer-done-group="' + escapeHtml(partnerName) + '" style="padding:6px 14px; font-size:12px; flex:none;">이 거래처 전체 완료</button>' +
+        '<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; gap:10px;">' +
+        '<div><div style="font-size:17px; font-weight:700;">' + escapeHtml(g.partnerName) + '</div>' +
+        '<div style="font-size:13px; color:var(--primary-dark); font-weight:600; margin-top:2px;">📦 ' + (g.warehouseName ? escapeHtml(g.warehouseName) + ' 창고로' : '창고 미지정 (수정에서 지정해주세요)') + '</div></div>' +
+        '<button class="primary-btn" data-transfer-done-group="' + escapeHtml(key) + '" style="padding:6px 14px; font-size:12px; flex:none;">완료 처리</button>' +
         '</div><table style="width:100%;"><tbody>';
       Object.values(g.items).forEach(it => {
         html += '<tr><td style="font-size:16px; padding:6px 0;">' + escapeHtml(it.name) +
@@ -1708,16 +1794,16 @@ function startApp(fbConfig) {
     document.getElementById('transferSummaryModal').style.display = 'flex';
     document.getElementById('transferSummaryContent').querySelectorAll('[data-transfer-done-group]').forEach(btn => {
       btn.addEventListener('click', async () => {
-        const partnerName = btn.dataset.transferDoneGroup;
-        if (!confirm('"' + partnerName + '" 앞으로 가는 대기 중인 출고를 전부 창고이동 완료 처리할까요?')) return;
-        const ids = groups[partnerName].orderIds;
-        for (const id of ids) {
+        const key = btn.dataset.transferDoneGroup;
+        const g = groups[key];
+        if (!confirm('"' + g.partnerName + '"(' + (g.warehouseName || '창고 미지정') + ') 앞으로 가는 대기 중인 출고를 전부 창고이동 완료 처리할까요?')) return;
+        for (const id of g.orderIds) {
           await db.collection('outbound').doc(id).update({
             status: 'done', completedAt: firebase.firestore.FieldValue.serverTimestamp(), completedBy: auth.currentUser.email
           });
-          logActivity('outbound', 'done', id, partnerName + ' 앞 출고 창고이동 완료 (모아보기에서 일괄 처리)');
+          logActivity('outbound', 'done', id, g.partnerName + ' 앞 출고 창고이동 완료 (모아보기에서 일괄 처리)');
         }
-        showToast('"' + partnerName + '" 완료 처리했어요.');
+        showToast('"' + g.partnerName + '" 완료 처리했어요.');
         showTransferSummary();
       });
     });
@@ -1780,13 +1866,14 @@ function startApp(fbConfig) {
 
     if (!filtered.length) { area.innerHTML = '<div class="empty">해당하는 출고 내역이 없어요.</div>'; return; }
 
-    let html = '<table><thead><tr><th>날짜</th><th>거래처</th><th>품목수</th><th class="num">총액</th><th>상태</th><th></th></tr></thead><tbody>';
+    let html = '<table><thead><tr><th>날짜</th><th>거래처</th><th>창고</th><th>품목수</th><th class="num">총액</th><th>상태</th><th></th></tr></thead><tbody>';
     filtered.forEach(o => {
       const itemCount = (o.items || []).length;
       const statusExtra = o.status === 'done' && o.completedBy
         ? '<div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">' + escapeHtml(o.completedBy) + ' · ' + fmtDate(o.completedAt) + '</div>'
         : '';
       html += '<tr><td>' + fmtDateOnly(o.createdAt) + '</td><td class="prod-name">' + escapeHtml(o.partnerName) + '</td>' +
+        '<td>' + escapeHtml(o.warehouseName || '-') + '</td>' +
         '<td>' + itemCount + '건</td><td class="num">' + fmtMoney(o.total) + '</td>' +
         '<td><span class="status-pill ' + (o.status === 'done' ? 'status-done' : 'status-pending') + '">' + (o.status === 'done' ? '이동완료' : '이동대기') + '</span>' + statusExtra + '</td>' +
         '<td class="row-actions" style="display:flex; gap:6px; justify-content:center;">' +
@@ -1873,7 +1960,9 @@ function startApp(fbConfig) {
 
   function renderAll() {
     refreshPartnerSelects();
+    refreshWarehouseSelect();
     renderPartnerList();
+    renderWarehouseList();
     renderProductList();
     renderOutboundList();
     renderLedger();
