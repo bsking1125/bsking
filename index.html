@@ -205,7 +205,7 @@
       <div class="subtitle" style="margin:2px 0 0;">출고할 때마다 거래명세표를 만들고, 창고이동을 놓치지 않게 관리해요</div>
     </div>
     <div class="user-chip">
-      <a href="./online.html" class="ghost-btn" style="text-decoration:none;">📦 온라인 관리로 이동</a>
+      <a href="./online.html" id="goOnlineLink" class="ghost-btn" style="text-decoration:none; display:none;">📦 온라인 관리로 이동</a>
       <span id="currentUserEmail"></span>
       <button class="ghost-btn" id="logoutBtn">로그아웃</button>
     </div>
@@ -621,7 +621,7 @@ function startApp(fbConfig) {
     }
 
     if (isAdminEmail(user.email)) {
-      enterApp(user, true);
+      enterApp(user, true, false, true);
       return;
     }
 
@@ -632,9 +632,9 @@ function startApp(fbConfig) {
       const hasWarehouse = doc.exists && doc.data().warehouseAccess === true;
       const hasOnline = doc.exists && doc.data().onlineAccess === true;
       if (approved && hasWarehouse && hasOnline) {
-        enterApp(user, false, false); // 둘 다 있으면 선택 화면
+        enterApp(user, false, false, true); // 둘 다 있으면 선택 화면
       } else if (approved && hasWarehouse) {
-        enterApp(user, false, true); // 창고 관리만 있으면 바로 진입
+        enterApp(user, false, true, false); // 창고 관리만 있으면 바로 진입
       } else if (approved && hasOnline) {
         window.location.href = './online.html'; // 온라인 관리만 있으면 그쪽으로 이동
       } else if (approved) {
@@ -658,10 +658,11 @@ function startApp(fbConfig) {
     });
   });
 
-  function enterApp(user, admin, skipHub) {
+  function enterApp(user, admin, skipHub, hasOnlineAccess) {
     document.getElementById('pendingGate').style.display = 'none';
     document.getElementById('loginGate').style.display = 'none';
     document.getElementById('noAccessGate').style.display = 'none';
+    document.getElementById('goOnlineLink').style.display = (admin || hasOnlineAccess) ? '' : 'none';
     if (skipHub) {
       document.getElementById('hubGate').style.display = 'none';
       document.getElementById('appWrap').style.display = '';

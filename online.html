@@ -217,7 +217,7 @@
   <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:2px;">
     <div></div>
     <div style="display:flex; align-items:center; gap:10px; font-size:12px; color:var(--ink-soft);">
-      <a href="./index.html" class="ghost-btn" style="text-decoration:none;">🚚 창고 관리로 이동</a>
+      <a href="./index.html" id="goWarehouseLink" class="ghost-btn" style="text-decoration:none; display:none;">🚚 창고 관리로 이동</a>
       <span id="currentUserEmailOnline"></span>
       <button class="ghost-btn" id="onlineLogoutBtn">로그아웃</button>
     </div>
@@ -513,13 +513,13 @@ auth.onAuthStateChanged(user => {
     document.getElementById('loginGate').style.display = 'flex';
     return;
   }
-  if (isAdminEmail(user.email)) { enterOnlineApp(user); return; }
+  if (isAdminEmail(user.email)) { enterOnlineApp(user, true); return; }
   unsubscribeOwnProfileOnline = db.collection('users').doc(user.uid).onSnapshot(doc => {
     const approved = doc.exists && doc.data().approved === true;
     const hasOnline = doc.exists && doc.data().onlineAccess === true;
     const hasWarehouse = doc.exists && doc.data().warehouseAccess === true;
     if (approved && hasOnline) {
-      enterOnlineApp(user);
+      enterOnlineApp(user, hasWarehouse);
     } else if (approved && hasWarehouse) {
       window.location.href = './index.html'; // 온라인 권한은 없고 창고 관리 권한만 있으면 그쪽으로 이동
     } else if (approved) {
@@ -541,13 +541,14 @@ auth.onAuthStateChanged(user => {
     document.getElementById('pendingUserEmail').textContent = user.email;
   });
 });
-function enterOnlineApp(user) {
+function enterOnlineApp(user, hasWarehouseAccess) {
   document.getElementById('pendingGate').style.display = 'none';
   document.getElementById('loginGate').style.display = 'none';
   document.getElementById('appWrap').style.display = '';
   currentUserIsAdmin = isAdminEmail(user.email);
   document.getElementById('currentUserEmailOnline').textContent = user.email + (currentUserIsAdmin ? ' (관리자)' : '');
   document.getElementById('adminActionBar').style.display = currentUserIsAdmin ? 'flex' : 'none';
+  document.getElementById('goWarehouseLink').style.display = (currentUserIsAdmin || hasWarehouseAccess) ? '' : 'none';
   startFirestoreSync();
 }
 
