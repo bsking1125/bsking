@@ -172,7 +172,7 @@
 <div id="noAccessGate" class="center-screen" style="display:none;">
   <div class="center-box" style="text-align:center;">
     <h1>🚫 접근 권한이 없어요</h1>
-    <div class="sub">이 앱(창고지기) 이용 권한이 아직 없어요. 관리자에게 문의해주세요.</div>
+    <div class="sub">아직 이용 가능한 앱이 없어요. 관리자에게 권한을 부여받아야 합니다.</div>
     <div class="user-chip" style="justify-content:center; margin-top:14px;">
       <button class="ghost-btn" id="noAccessLogoutBtn">로그아웃</button>
     </div>
@@ -185,10 +185,10 @@
     <div class="sub" style="margin-bottom:22px;">같은 계정으로 두 앱 다 쓸 수 있어요. 필요할 때 언제든 서로 넘어갈 수 있어요.</div>
     <div style="display:flex; flex-direction:column; gap:12px;">
       <button id="hubGoWarehouseBtn" class="primary-btn" style="padding:18px; font-size:15px; text-align:left;">
-        🚚 창고 관리 (출고 등록)<br><span style="font-weight:400; font-size:12px; opacity:0.85;">거래명세표 만들고, 창고이동 관리해요</span>
+        🚚 창고 관리<br><span style="font-weight:400; font-size:12px; opacity:0.85;">거래명세표 만들고, 창고이동 관리해요</span>
       </button>
       <button id="hubGoOnlineBtn" class="ghost-btn" style="padding:18px; font-size:15px; text-align:left;">
-        📦 온라인 재고 관리<br><span style="font-weight:400; font-size:12px; color:var(--ink-soft);">온라인 채널별 미결 재고를 관리해요</span>
+        📦 온라인 관리<br><span style="font-weight:400; font-size:12px; color:var(--ink-soft);">온라인 채널별 미결 재고를 관리해요</span>
       </button>
     </div>
     <div style="margin-top:20px;">
@@ -201,11 +201,11 @@
 
   <div class="topbar">
     <div>
-      <div class="title">충인농 창고지기</div>
+      <div class="title">창고 관리</div>
       <div class="subtitle" style="margin:2px 0 0;">출고할 때마다 거래명세표를 만들고, 창고이동을 놓치지 않게 관리해요</div>
     </div>
     <div class="user-chip">
-      <a href="./online.html" class="ghost-btn" style="text-decoration:none;">📦 온라인 재고 관리로 이동</a>
+      <a href="./online.html" class="ghost-btn" style="text-decoration:none;">📦 온라인 관리로 이동</a>
       <span id="currentUserEmail"></span>
       <button class="ghost-btn" id="logoutBtn">로그아웃</button>
     </div>
@@ -629,9 +629,14 @@ function startApp(fbConfig) {
     // (관리자가 승인 버튼을 누르는 순간 이 화면이 자동으로 앱으로 넘어가요)
     unsubscribeOwnProfile = db.collection('users').doc(user.uid).onSnapshot(doc => {
       const approved = doc.exists && doc.data().approved === true;
-      const hasAccess = doc.exists && doc.data().warehouseAccess === true;
-      if (approved && hasAccess) {
-        enterApp(user, false);
+      const hasWarehouse = doc.exists && doc.data().warehouseAccess === true;
+      const hasOnline = doc.exists && doc.data().onlineAccess === true;
+      if (approved && hasWarehouse && hasOnline) {
+        enterApp(user, false, false); // 둘 다 있으면 선택 화면
+      } else if (approved && hasWarehouse) {
+        enterApp(user, false, true); // 창고 관리만 있으면 바로 진입
+      } else if (approved && hasOnline) {
+        window.location.href = './online.html'; // 온라인 관리만 있으면 그쪽으로 이동
       } else if (approved) {
         document.getElementById('appWrap').style.display = 'none';
         document.getElementById('hubGate').style.display = 'none';
@@ -653,11 +658,17 @@ function startApp(fbConfig) {
     });
   });
 
-  function enterApp(user, admin) {
+  function enterApp(user, admin, skipHub) {
     document.getElementById('pendingGate').style.display = 'none';
     document.getElementById('loginGate').style.display = 'none';
-    document.getElementById('hubGate').style.display = 'flex';
-    document.getElementById('appWrap').style.display = 'none';
+    document.getElementById('noAccessGate').style.display = 'none';
+    if (skipHub) {
+      document.getElementById('hubGate').style.display = 'none';
+      document.getElementById('appWrap').style.display = '';
+    } else {
+      document.getElementById('hubGate').style.display = 'flex';
+      document.getElementById('appWrap').style.display = 'none';
+    }
     document.getElementById('currentUserEmail').textContent = user.email + (admin ? ' (관리자)' : '');
     document.getElementById('approvalsTabBtn').style.display = admin ? '' : 'none';
     document.getElementById('activityLogTabBtn').style.display = admin ? '' : 'none';

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>미결 재고 관리</title>
+<title>온라인 관리</title>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
@@ -162,7 +162,7 @@
 <body>
 <div id="loginGate" style="position:fixed; inset:0; z-index:9999; background: var(--bg); display:none; align-items:center; justify-content:center; padding:24px;">
   <div style="background: var(--surface); border:1px solid var(--line); border-radius:14px; padding:32px 28px; width:100%; max-width:340px; box-shadow:0 10px 30px rgba(0,0,0,0.08);">
-    <div style="font-size:18px; font-weight:700; margin-bottom:6px; color: var(--ink); text-align:center;">미결 재고 관리</div>
+    <div style="font-size:18px; font-weight:700; margin-bottom:6px; color: var(--ink); text-align:center;">온라인 관리</div>
     <div style="font-size:13px; color: var(--ink-soft); margin-bottom:18px; text-align:center;">충인농 창고지기랑 같은 계정으로 로그인해요</div>
 
     <div style="display:flex; gap:4px; border-bottom:1px solid var(--line); margin-bottom:16px;">
@@ -208,7 +208,7 @@
 <div id="noAccessGate" style="position:fixed; inset:0; z-index:9999; background: var(--bg); display:none; align-items:center; justify-content:center; padding:24px;">
   <div style="background: var(--surface); border:1px solid var(--line); border-radius:14px; padding:32px 28px; width:100%; max-width:340px; box-shadow:0 10px 30px rgba(0,0,0,0.08); text-align:center;">
     <div style="font-size:18px; font-weight:700; margin-bottom:6px; color: var(--ink);">🚫 접근 권한이 없어요</div>
-    <div style="font-size:13px; color: var(--ink-soft); margin-bottom:18px;">이 앱(온라인 재고 관리) 이용 권한이 아직 없어요. 관리자에게 문의해주세요.</div>
+    <div style="font-size:13px; color: var(--ink-soft); margin-bottom:18px;">아직 이용 가능한 앱이 없어요. 관리자에게 권한을 부여받아야 합니다.</div>
     <button class="ghost-btn" id="noAccessLogoutBtn">로그아웃</button>
   </div>
 </div>
@@ -224,7 +224,7 @@
   </div>
   <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:10px;">
     <div>
-      <div class="title" style="margin-bottom:0;">미결 재고 관리</div>
+      <div class="title" style="margin-bottom:0;">온라인 관리</div>
       <div class="subtitle">온라인에서 나간 주문(미결)만큼 스토어별로 재고가 쌓이고, 매출처리(정산 확정)되면 그만큼 빠집니다.</div>
     </div>
     <div id="adminActionBar" style="display:none; gap:8px; flex-wrap:wrap; justify-content:flex-end; margin-bottom:14px;">
@@ -516,9 +516,12 @@ auth.onAuthStateChanged(user => {
   if (isAdminEmail(user.email)) { enterOnlineApp(user); return; }
   unsubscribeOwnProfileOnline = db.collection('users').doc(user.uid).onSnapshot(doc => {
     const approved = doc.exists && doc.data().approved === true;
-    const hasAccess = doc.exists && doc.data().onlineAccess === true;
-    if (approved && hasAccess) {
+    const hasOnline = doc.exists && doc.data().onlineAccess === true;
+    const hasWarehouse = doc.exists && doc.data().warehouseAccess === true;
+    if (approved && hasOnline) {
       enterOnlineApp(user);
+    } else if (approved && hasWarehouse) {
+      window.location.href = './index.html'; // 온라인 권한은 없고 창고 관리 권한만 있으면 그쪽으로 이동
     } else if (approved) {
       document.getElementById('appWrap').style.display = 'none';
       document.getElementById('loginGate').style.display = 'none';
