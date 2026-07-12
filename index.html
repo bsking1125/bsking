@@ -218,7 +218,7 @@
     <button class="tab-btn" data-tab="whstock">미결 현황</button>
     <button class="tab-btn active" data-tab="register">출고 등록</button>
     <button class="tab-btn" data-tab="outbound-list">출고 내역</button>
-    <button class="tab-btn" data-tab="ledger">전체 품목 기록</button>
+    <button class="tab-btn" data-tab="ledger">매출처리</button>
     <button class="tab-btn" data-tab="products">품목 관리</button>
     <button class="tab-btn" data-tab="partners">거래처 관리</button>
     <button class="tab-btn" data-tab="warehouses">창고 등록</button>
@@ -314,7 +314,15 @@
       </div>
     </div>
 
-    <div class="section-head"><div><h2 style="font-size:14px;">품목 담기</h2><div class="desc">품목명이나 바코드 일부를 입력하면 검색돼요. 없는 품목이면 "품목 관리" 탭에서 먼저 등록해주세요.</div></div></div>
+    <div class="section-head"><div><h2 style="font-size:14px;">품목 담기</h2><div class="desc">품목명이나 바코드 일부를 입력하면 검색돼요. 없는 품목이면 "품목 관리" 탭에서 먼저 등록해주세요.</div></div>
+      <div id="priceTierBar" style="display:flex; gap:12px; align-items:center; flex-wrap:wrap; font-size:12px; color:var(--ink-soft);">
+        <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="price-tier-check" data-tier="manual">직접입력</label>
+        <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="price-tier-check" data-tier="consumer">소비자가</label>
+        <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="price-tier-check" data-tier="member">조합원가</label>
+        <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="price-tier-check" data-tier="distributor">대리점가</label>
+        <label style="display:flex; align-items:center; gap:4px; cursor:pointer;"><input type="checkbox" class="price-tier-check" data-tier="special">특판가</label>
+      </div>
+    </div>
     <div class="card" style="margin-bottom:16px; position:relative;">
       <div class="field" style="position:relative;">
         <label>품목 검색 (품목명 또는 바코드)</label>
@@ -347,12 +355,14 @@
   <div class="tab-panel" data-panel="outbound-list" style="display:none;">
     <div class="section-head">
       <div><h2>출고 내역</h2><div class="desc">날짜 · 거래처 · 상태로 필터해서 볼 수 있어요.</div></div>
-      <button class="ghost-btn" id="openTransferSummaryBtn">창고이동 정리 보기</button>
+      <div style="display:flex; gap:8px;">
+        <button class="ghost-btn" id="chooseInvoiceFolderBtn">📁 송장 저장 폴더 지정</button>
+        <button class="ghost-btn" id="openTransferSummaryBtn">창고이동 정리 보기</button>
+      </div>
     </div>
     <div id="outboundBulkEntryBar" style="display:flex; align-items:center; gap:8px; margin-bottom:12px; flex-wrap:wrap;">
       <button class="ghost-btn" id="bulkPrintInvoiceBtn">거래명세표 출력</button>
       <button class="ghost-btn" id="bulkShippingExcelBtn">송장 출력</button>
-      <button class="ghost-btn" id="chooseInvoiceFolderBtn">📁 송장 저장 폴더 지정</button>
       <button class="ghost-btn" id="bulkExcelInvoiceBtn">엑셀 전환</button>
       <button class="ghost-btn" id="bulkEditEntryBtn">수정</button>
       <button class="ghost-btn" id="bulkDeleteEntryBtn" style="color:var(--red); border-color:var(--red);">삭제</button>
@@ -378,10 +388,18 @@
     <div class="table-scroll" id="outboundListArea"></div>
   </div>
 
-  <!-- 전체 품목 기록 (날짜별로 한 줄씩) -->
+  <!-- 매출처리 (날짜별로 한 줄씩) -->
   <div class="tab-panel" data-panel="ledger" style="display:none;">
     <div class="section-head">
-      <div><h2>전체 품목 기록</h2><div class="desc">창고이동이 끝난 품목만 여기 쌓여요. 매출처리 누르면 목록에서 빠져요 (헷갈리지 않게요).</div></div>
+      <div><h2>매출처리</h2><div class="desc">창고이동이 끝난 품목만 여기 쌓여요. 매출처리하면 목록에서 빠져요 (헷갈리지 않게요).</div></div>
+    </div>
+    <div id="ledgerBulkEntryBar" style="display:flex; align-items:center; gap:8px; margin-bottom:12px;">
+      <button class="ghost-btn" id="ledgerBulkEntryBtn">매출처리</button>
+    </div>
+    <div id="ledgerBulkBar" style="display:none; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap; background:var(--bg); border-radius:8px; padding:10px 12px;">
+      <span id="ledgerSelectedCount" style="font-size:13px; font-weight:600;"></span>
+      <button class="primary-btn" id="ledgerBulkConfirmBtn">선택한 건 매출처리</button>
+      <button class="ghost-btn" id="ledgerBulkClearBtn">취소</button>
     </div>
     <div class="filter-grid" style="margin-bottom:14px;">
       <div class="field"><label>시작일</label><input type="date" id="ledgerFilterFrom"></div>
@@ -390,6 +408,7 @@
       <div class="field"><label>품목명 검색</label><input type="text" id="ledgerFilterProduct" placeholder="품목명 일부 입력"></div>
     </div>
     <div class="table-scroll" id="ledgerArea"></div>
+    <div id="ledgerBulkTotals" style="display:none; text-align:right; font-size:14px; font-weight:700; padding:10px 4px; border-top:1px solid var(--line); margin-top:-1px;"></div>
   </div>
 
   <!-- 품목 관리 -->
@@ -1663,8 +1682,40 @@ function startApp(fbConfig) {
     if (!itemSearchResults.contains(e.target) && e.target !== itemSearchInput) itemSearchResults.style.display = 'none';
   });
 
+  let selectedPriceTier = localStorage.getItem('priceTier') || 'distributor';
+  function priceForTier(product, tier) {
+    if (tier === 'manual') return 0;
+    if (tier === 'consumer') return product.consumerPrice || 0;
+    if (tier === 'member') return product.memberPrice || 0;
+    if (tier === 'special') return product.specialDistributorPrice || 0;
+    return product.distributorPrice || product.consumerPrice || 0; // distributor(기본값)
+  }
+  function applyPriceTierUI() {
+    document.querySelectorAll('.price-tier-check').forEach(cb => {
+      cb.checked = (cb.dataset.tier === selectedPriceTier);
+    });
+  }
+  document.querySelectorAll('.price-tier-check').forEach(cb => {
+    cb.addEventListener('change', () => {
+      selectedPriceTier = cb.dataset.tier;
+      localStorage.setItem('priceTier', selectedPriceTier);
+      applyPriceTierUI();
+      // 이미 담아둔 품목들도 새로 고른 가격 기준으로 다시 채워줘요
+      let changed = 0;
+      cartItems.forEach(item => {
+        if (!item.productId) return; // 어디서 온 품목인지 모르면 건드리지 않아요
+        const product = productMaster.find(p => p.id === item.productId);
+        if (!product) return;
+        item.price = priceForTier(product, selectedPriceTier);
+        changed++;
+      });
+      if (changed) { renderCart(); showToast('담아둔 품목 ' + changed + '개 단가를 다시 적용했어요.'); }
+    });
+  });
+  applyPriceTierUI();
+
   function addToCart(product) {
-    cartItems.push({ productId: product.id, name: product.name, spec: product.spec || '', price: product.defaultPrice || 0, qty: 1, note: '' });
+    cartItems.push({ productId: product.id, name: product.name, spec: product.spec || '', price: priceForTier(product, selectedPriceTier), qty: 1, note: '' });
     renderCart();
   }
   function renderCart() {
@@ -2277,7 +2328,16 @@ function startApp(fbConfig) {
   /* ============ 창고이동 정리 (내부망에 입력할 때 참고용) ============ */
   function showTransferSummary() {
     const pending = outboundList.filter(o => o.status !== 'done');
-    if (!pending.length) { showToast('창고이동 대기 중인 게 없어요.'); return; }
+    if (!pending.length) {
+      const modal = document.getElementById('transferSummaryModal');
+      if (modal.style.display !== 'none') {
+        modal.style.display = 'none';
+        showToast('창고이동 대기 중인 게 다 처리됐어요.');
+      } else {
+        showToast('창고이동 대기 중인 게 없어요.');
+      }
+      return;
+    }
 
     // 거래처별로 묶고, 같은 거래처로 가는 같은 품목은 수량을 합쳐요
     const groups = {};
@@ -2446,7 +2506,10 @@ function startApp(fbConfig) {
     document.getElementById(id).addEventListener('change', renderOutboundList);
   });
 
-  /* ============ 전체 품목 기록 (날짜별로 한 줄씩) ============ */
+  /* ============ 매출처리 (날짜별로 한 줄씩) ============ */
+  let ledgerBulkMode = false;
+  let ledgerSelectedKeys = new Set(); // 'outboundId||itemIndex' 형태로 저장
+
   function renderLedger() {
     const area = document.getElementById('ledgerArea');
     const from = document.getElementById('ledgerFilterFrom').value;
@@ -2460,11 +2523,11 @@ function startApp(fbConfig) {
     outboundList.forEach(o => {
       if (o.status !== 'done' || o.salesProcessed) return;
       const d = fmtDateOnly(o.createdAt);
-      (o.items || []).forEach(it => {
+      (o.items || []).forEach((it, idx) => {
         rows.push({
           date: d, createdAt: o.createdAt, partnerId: o.partnerId, partnerName: o.partnerName,
           name: it.name, spec: it.spec, qty: it.qty, price: it.price, amount: it.amount,
-          outboundId: o.id
+          outboundId: o.id, key: o.id + '||' + idx
         });
       });
     });
@@ -2479,22 +2542,94 @@ function startApp(fbConfig) {
 
     if (!rows.length) { area.innerHTML = '<div class="empty">매출처리 대기 중인 기록이 없어요.</div>'; return; }
 
-    let html = '<table><thead><tr><th>날짜</th><th>거래처</th><th>품목명</th><th>규격</th><th class="num">수량</th><th class="num">단가</th><th class="num">금액</th><th>상태</th></tr></thead><tbody>';
+    const checkboxTh = ledgerBulkMode ? '<th style="width:34px;"><input type="checkbox" id="ledgerSelectAll"></th>' : '';
+    let html = '<table><thead><tr>' + checkboxTh + '<th>날짜</th><th>거래처</th><th>품목명</th><th>규격</th><th class="num">수량</th><th class="num">단가</th><th class="num">금액</th>' + (ledgerBulkMode ? '' : '<th>상태</th>') + '</tr></thead><tbody>';
     rows.forEach(r => {
-      html += '<tr><td>' + r.date + '</td><td class="prod-name">' + escapeHtml(r.partnerName) + '</td>' +
+      const checkboxTd = ledgerBulkMode ? '<td><input type="checkbox" class="ledger-check" data-key="' + r.key + '" ' + (ledgerSelectedKeys.has(r.key) ? 'checked' : '') + '></td>' : '';
+      html += '<tr>' + checkboxTd + '<td>' + r.date + '</td><td class="prod-name">' + escapeHtml(r.partnerName) + '</td>' +
         '<td>' + escapeHtml(r.name) + '</td><td>' + escapeHtml(r.spec||'-') + '</td>' +
         '<td class="num">' + r.qty + '</td><td class="num">' + fmtMoney(r.price) + '</td><td class="num">' + fmtMoney(r.amount) + '</td>' +
-        '<td><button data-sales-processed="' + r.outboundId + '" style="color:var(--primary-dark); font-weight:700;">매출처리</button></td></tr>';
+        (ledgerBulkMode ? '' : '<td><button data-sales-processed="' + r.outboundId + '" style="color:var(--primary-dark); font-weight:700;">매출처리</button></td>') +
+        '</tr>';
     });
     html += '</tbody></table>';
     area.innerHTML = html;
-    area.querySelectorAll('[data-sales-processed]').forEach(btn => btn.addEventListener('click', () => markSalesProcessed(btn.dataset.salesProcessed)));
+
+    if (ledgerBulkMode) {
+      area.querySelectorAll('.ledger-check').forEach(cb => {
+        cb.addEventListener('change', () => {
+          if (cb.checked) ledgerSelectedKeys.add(cb.dataset.key); else ledgerSelectedKeys.delete(cb.dataset.key);
+          updateLedgerBulkBar(rows);
+        });
+      });
+      const selectAllCb = document.getElementById('ledgerSelectAll');
+      if (selectAllCb) {
+        selectAllCb.addEventListener('change', () => {
+          rows.forEach(r => { if (selectAllCb.checked) ledgerSelectedKeys.add(r.key); else ledgerSelectedKeys.delete(r.key); });
+          renderLedger();
+        });
+      }
+      updateLedgerBulkBar(rows);
+    } else {
+      area.querySelectorAll('[data-sales-processed]').forEach(btn => btn.addEventListener('click', () => markSalesProcessed(btn.dataset.salesProcessed)));
+    }
   }
+
+  function updateLedgerBulkBar(rows) {
+    const bar = document.getElementById('ledgerBulkBar');
+    const entryBar = document.getElementById('ledgerBulkEntryBar');
+    const totalsEl = document.getElementById('ledgerBulkTotals');
+    if (!bar) return;
+    if (ledgerBulkMode) {
+      entryBar.style.display = 'none';
+      bar.style.display = 'flex';
+      const checkedRows = rows.filter(r => ledgerSelectedKeys.has(r.key));
+      const totalQty = checkedRows.reduce((s, r) => s + r.qty, 0);
+      const totalAmount = checkedRows.reduce((s, r) => s + r.amount, 0);
+      document.getElementById('ledgerSelectedCount').textContent = checkedRows.length + '건 선택됨';
+      document.getElementById('ledgerBulkConfirmBtn').disabled = checkedRows.length === 0;
+      totalsEl.style.display = 'block';
+      totalsEl.textContent = '합계 : 수량 ' + totalQty + '개  금액 ' + fmtMoney(totalAmount) + '원';
+    } else {
+      entryBar.style.display = 'flex';
+      bar.style.display = 'none';
+      totalsEl.style.display = 'none';
+    }
+  }
+  document.getElementById('ledgerBulkEntryBtn').addEventListener('click', () => {
+    ledgerBulkMode = true;
+    ledgerSelectedKeys.clear();
+    renderLedger();
+  });
+  document.getElementById('ledgerBulkClearBtn').addEventListener('click', () => {
+    ledgerBulkMode = false;
+    ledgerSelectedKeys.clear();
+    renderLedger();
+  });
+  document.getElementById('ledgerBulkConfirmBtn').addEventListener('click', async () => {
+    if (!ledgerSelectedKeys.size) { showToast('먼저 항목을 체크해주세요.'); return; }
+    const outboundIds = new Set([...ledgerSelectedKeys].map(k => k.split('||')[0]));
+    if (!confirm(outboundIds.size + '건을 매출처리 완료로 표시할까요? 표시하면 미결 현황에서 사라져요.')) return;
+    for (const id of outboundIds) {
+      const o = outboundList.find(x => x.id === id);
+      await db.collection('outbound').doc(id).update({
+        salesProcessed: true, salesProcessedAt: firebase.firestore.FieldValue.serverTimestamp(), salesProcessedBy: auth.currentUser.email
+      });
+      if (o) whAdjustForOrder(o.partnerName, o.items, -1);
+    }
+    showToast(outboundIds.size + '건을 매출처리했어요.');
+    ledgerBulkMode = false;
+    ledgerSelectedKeys.clear();
+    renderLedger();
+  });
+
   async function markSalesProcessed(outboundId) {
-    if (!confirm('이 출고 건을 매출처리 완료로 표시할까요?\n표시하면 이 목록에서 사라져요 (전체 출고 내역에는 그대로 남아요).')) return;
+    if (!confirm('이 출고 건을 매출처리 완료로 표시할까요? 표시하면 미결 현황에서 사라져요.')) return;
+    const o = outboundList.find(x => x.id === outboundId);
     await db.collection('outbound').doc(outboundId).update({
       salesProcessed: true, salesProcessedAt: firebase.firestore.FieldValue.serverTimestamp(), salesProcessedBy: auth.currentUser.email
     });
+    if (o) whAdjustForOrder(o.partnerName, o.items, -1); // 매출처리까지 끝났으니 미결에서도 빠져요
     showToast('매출처리 완료로 표시했어요.');
   }
   ['ledgerFilterFrom','ledgerFilterTo','ledgerFilterPartner','ledgerFilterProduct'].forEach(id => {
