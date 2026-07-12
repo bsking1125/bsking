@@ -207,16 +207,7 @@
     <button class="tab-btn" data-tab="partners">거래처 관리</button>
     <button class="tab-btn" data-tab="warehouses">창고 등록</button>
     <button class="tab-btn" data-tab="warehousestatus">창고별 현황</button>
-    <button class="tab-btn" data-tab="approvals" id="approvalsTabBtn" style="display:none;">회원 관리<span id="pendingCountBadge"></span></button>
     <button class="tab-btn" data-tab="activitylog" id="activityLogTabBtn" style="display:none;">변경 이력</button>
-  </div>
-
-  <!-- 회원 관리 (관리자 전용) -->
-  <div class="tab-panel" data-panel="approvals" style="display:none;">
-    <div class="section-head">
-      <div><h2>회원 관리</h2><div class="desc">가입 승인하고, 사람마다 어떤 앱에 들어갈 수 있는지 정해요.</div></div>
-    </div>
-    <div id="approvalsListArea"></div>
   </div>
 
   <!-- 변경 이력 (관리자 전용) -->
@@ -725,7 +716,6 @@ function startApp(fbConfig) {
     document.getElementById('importProductsFromWarehouseBtn').style.display = admin ? '' : 'none';
     document.getElementById('appWrap').style.display = '';
     document.getElementById('currentUserEmail').textContent = user.email + (admin ? ' (관리자)' : '');
-    document.getElementById('approvalsTabBtn').style.display = admin ? '' : 'none';
     document.getElementById('activityLogTabBtn').style.display = admin ? '' : 'none';
     currentUserIsAdmin = admin;
     editingOutboundId = null;
@@ -745,7 +735,6 @@ function startApp(fbConfig) {
       ledgerToInput.value = t;
     }
     initRealtimeListeners();
-    if (admin) initApprovalsListener();
   }
 
   let approvalsUnsub = null;
