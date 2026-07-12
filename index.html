@@ -2199,7 +2199,7 @@ function startApp(fbConfig) {
         '<td><span class="status-pill ' + (o.status === 'done' ? 'status-done' : 'status-pending') + '">' + (o.status === 'done' ? '이동완료' : '이동대기') + '</span>' + statusExtra + '</td>' +
         '<td>' + (o.status === 'done'
           ? escapeHtml(o.warehouseName || '-')
-          : '<select data-wh-pick="' + o.id + '" style="font-size:13px; font-family:inherit; padding:3px 4px;"><option value="">창고 선택</option>' + orderedWarehouses().map(w => '<option value="' + w.id + '"' + (o.warehouseId === w.id ? ' selected' : '') + '>' + escapeHtml(w.name) + '</option>').join('') + '</select>') +
+          : '<select data-wh-pick="' + o.id + '" style="font-size:13px; padding:6px 8px; max-width:110px;"><option value="">창고 선택</option>' + orderedWarehouses().map(w => '<option value="' + w.id + '"' + (o.warehouseId === w.id ? ' selected' : '') + '>' + escapeHtml(w.name) + '</option>').join('') + '</select>') +
         '</td>' +
         '<td class="row-actions" style="display:flex; gap:6px; justify-content:center; align-items:center;">' +
         (o.status !== 'done'
