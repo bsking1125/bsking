@@ -62,9 +62,9 @@
   .add-row input, .add-row select { flex: 1; min-width: 120px; }
   .qty { max-width: 100px; flex: none !important; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; }
-  th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: center; white-space: nowrap; font-size: 13px; }
+  th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: center; vertical-align: middle; white-space: nowrap; font-size: 13px; line-height: 20px; }
   th { color: var(--ink-soft); font-weight: 600; }
-  td.num, th.num { text-align: right; font-family: var(--mono); }
+  td.num, th.num { text-align: right; }
   .table-scroll { overflow-x: auto; }
   .prod-name { font-weight: 600; }
   .empty { color: var(--ink-soft); font-size: 13px; padding: 30px 10px; text-align: center; }
@@ -75,7 +75,8 @@
   .badge-out { background: var(--red-tint); color: var(--red); }
   .badge-move { background: var(--amber-tint); color: var(--amber); }
   .row-actions { text-align: center; }
-  .row-actions button { background: none; border: none; color: var(--ink-soft); font-size: 13px; font-family: inherit; cursor: pointer; padding: 2px 4px; vertical-align:middle; }
+  .row-actions button { display:inline-flex; align-items:center; height:26px; box-sizing:border-box; background: none; border: none; color: var(--ink-soft); font-size: 13px; font-family: inherit; cursor: pointer; padding: 0 4px; }
+  .wh-pick-select { height:26px; box-sizing:border-box; font-size:13px; padding:0 6px; max-width:110px; }
   .row-actions button:hover { color: var(--red); }
   .arrow-btn { cursor: pointer; color: var(--ink-soft); font-size: 9px; padding: 1px; border-radius: 4px; opacity: 0; width: 0; overflow: hidden; display: inline-block; transition: opacity .12s ease, width .12s ease; }
   .arrow-btn:hover { background: var(--primary-tint); color: var(--primary-dark); }
@@ -88,7 +89,7 @@
   .history-qty { font-family: var(--mono); font-weight: 700; }
   .filter-bar { display: flex; gap: 6px; margin-bottom: 12px; }
   .transfer-banner { display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; background: var(--red-tint); border:1px solid var(--red); color: var(--red); border-radius: 10px; padding: 12px 16px; margin-bottom: 18px; font-size: 13px; font-weight:600; }
-  .status-pill { display:inline-block; font-size:11px; font-weight:700; padding:3px 9px; border-radius:10px; vertical-align:middle; }
+  .status-pill { display:inline-flex; align-items:center; justify-content:center; height:26px; box-sizing:border-box; font-size:11px; font-weight:700; padding:0 9px; border-radius:10px; }
   .status-pending { background: var(--red-tint); color: var(--red); }
   .status-done { background: var(--primary-tint); color: var(--primary-dark); }
   .invoice-table { width:100%; border-collapse:collapse; font-size:13px; margin: 14px 0; }
@@ -1116,7 +1117,7 @@ function startApp(fbConfig) {
         sorted.forEach(o => {
           html += '<tr><td>' + fmtDateOnly(o.createdAt) + '</td><td class="prod-name">' + escapeHtml(o.partnerName) + '</td>' +
             '<td>' + (o.items || []).length + '건</td><td class="num">' + fmtMoney(o.total) + '</td>' +
-            '<td><span class="status-pill ' + (o.status === 'done' ? 'status-done' : 'status-pending') + '">' + (o.status === 'done' ? '이동완료' : '이동대기') + '</span></td></tr>';
+            '<td><div style="display:flex; align-items:center; justify-content:center; height:24px;"><span style="color:' + (o.status === 'done' ? 'var(--primary-dark)' : 'var(--red)') + '; font-weight:700;">' + (o.status === 'done' ? '이동완료' : '이동대기') + '</span></div></td></tr>';
         });
         html += '</tbody></table>';
       }
@@ -1859,7 +1860,6 @@ function startApp(fbConfig) {
     const warehouseId = select ? select.value : '';
     if (!warehouseId) { showToast('이동할 창고를 먼저 선택해주세요.'); return; }
     const whName = warehouseName(warehouseId);
-    if (!confirm('"' + whName + '" 창고로 이동 처리할까요? 내부망 전산에도 실제로 반영하셨는지 확인해주세요.')) return;
     await db.collection('outbound').doc(id).update({
       status: 'done', warehouseId, warehouseName: whName,
       completedAt: firebase.firestore.FieldValue.serverTimestamp(), completedBy: auth.currentUser.email
@@ -2189,17 +2189,17 @@ function startApp(fbConfig) {
 
     if (!filtered.length) { area.innerHTML = '<div class="empty">해당하는 출고 내역이 없어요.</div>'; return; }
 
-    let html = '<table><thead><tr><th>날짜</th><th>거래처</th><th>품목수</th><th class="num">총액</th><th>상태</th><th>창고</th><th></th></tr></thead><tbody>';
+    let html = '<table style="white-space:nowrap;"><thead><tr><th>날짜</th><th>거래처</th><th>품목수</th><th class="num">총액</th><th>상태</th><th>창고</th><th>처리</th></tr></thead><tbody>';
     filtered.forEach(o => {
       const itemCount = (o.items || []).length;
       const statusExtra = '<div style="font-size:11px; color:var(--ink-soft); margin-top:2px; min-height:14px;">' +
         (o.status === 'done' && o.completedBy ? escapeHtml(o.completedBy) + ' · ' + fmtDate(o.completedAt) : '') + '</div>';
       html += '<tr><td>' + fmtDateOnly(o.createdAt) + '</td><td class="prod-name">' + escapeHtml(o.partnerName) + '</td>' +
         '<td>' + itemCount + '건</td><td class="num">' + fmtMoney(o.total) + '</td>' +
-        '<td><span class="status-pill ' + (o.status === 'done' ? 'status-done' : 'status-pending') + '">' + (o.status === 'done' ? '이동완료' : '이동대기') + '</span>' + statusExtra + '</td>' +
+        '<td><span style="color:' + (o.status === 'done' ? 'var(--primary-dark)' : 'var(--red)') + '; font-weight:700;">' + (o.status === 'done' ? '이동완료' : '이동대기') + '</span>' + statusExtra + '</td>' +
         '<td>' + (o.status === 'done'
           ? escapeHtml(o.warehouseName || '-')
-          : '<select data-wh-pick="' + o.id + '" style="font-size:13px; padding:6px 8px; max-width:110px; vertical-align:middle;"><option value="">창고 선택</option>' + orderedWarehouses().map(w => '<option value="' + w.id + '"' + (o.warehouseId === w.id ? ' selected' : '') + '>' + escapeHtml(w.name) + '</option>').join('') + '</select>') +
+          : '<select data-wh-pick="' + o.id + '" class="wh-pick-select"><option value="">창고 선택</option>' + orderedWarehouses().map(w => '<option value="' + w.id + '"' + (o.warehouseId === w.id ? ' selected' : '') + '>' + escapeHtml(w.name) + '</option>').join('') + '</select>') +
         '</td>' +
         '<td class="row-actions" style="display:flex; gap:6px; justify-content:center; align-items:center;">' +
         (o.status !== 'done'
