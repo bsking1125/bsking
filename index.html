@@ -246,7 +246,7 @@
   <!-- 미결 현황 (창고 자체 미결 매트릭스) -->
   <div class="tab-panel" data-panel="whstock" style="display:none;">
     <div class="section-head">
-      <div><h2>미결 현황</h2><div class="desc">상품별 · 거래처별 누적 미결 수량이에요. 온라인 관리와는 별개의 데이터예요.</div></div>
+      <div><h2>미결 현황</h2><div class="desc">창고이동 완료 처리한 만큼(=내부망에 실제로 반영한 만큼) 쌓여요. 출고 등록만으로는 안 쌓여요.</div></div>
       <div id="whAdminBar" style="display:none; gap:8px; flex-wrap:wrap;">
         <button class="ghost-btn" id="whToggleMergeStore">거래처 합치기</button>
         <button class="ghost-btn" id="whToggleAddProduct">+ 상품 직접 추가</button>
@@ -1209,6 +1209,22 @@ function startApp(fbConfig) {
     btn.disabled = whSelectedForDelete.size === 0;
   }
 
+  // 출고 등록/수정/삭제/창고이동완료·취소에 맞춰 미결 매트릭스를 자동으로 조정해요.
+  // sign이 +1이면 쌓고(미결 발생), -1이면 빼요(미결 해소)
+  function whAdjustForOrder(partnerName, items, sign) {
+    if (!partnerName || !items || !items.length) return;
+    (items || []).forEach(it => {
+      const name = it.name;
+      if (!whData.products[name]) whData.products[name] = { stores: {}, updatedAt: whNowStamp() };
+      if (!whData.products[name].stores) whData.products[name].stores = {};
+      const cur = whData.products[name].stores[partnerName] || 0;
+      whData.products[name].stores[partnerName] = Math.max(0, cur + sign * it.qty);
+      whData.products[name].updatedAt = whNowStamp();
+      if (!whData.storeOrder.includes(partnerName)) whData.storeOrder.push(partnerName);
+    });
+    whSaveData();
+  }
+
   function whAddProduct(name, store, qty) {
     name = (name || '').trim();
     store = (store || '').trim() || '초기값';
@@ -1792,6 +1808,11 @@ function startApp(fbConfig) {
         { ...order, total: fmtMoney(order.total) }
       ) + ' (품목 ' + (before ? (before.items||[]).length : '?') + '개 → ' + order.items.length + '개)';
       logActivity('outbound', 'update', editingOutboundId, summary);
+      if (before && before.status === 'done') {
+        // 이미 창고이동 완료돼서 미결에 반영돼 있던 건만, 예전 내용은 빼고 새 내용을 다시 더해요.
+        whAdjustForOrder(before.partnerName, before.items, -1);
+        whAdjustForOrder(order.partnerName, order.items, +1);
+      }
       showToast('출고 내용을 수정했어요.');
       resetRegisterForm();
       document.querySelector('.tab-btn[data-tab="outbound-list"]').click();
@@ -1801,6 +1822,7 @@ function startApp(fbConfig) {
       order.createdBy = auth.currentUser.email;
       const docRef = await db.collection('outbound').add(order);
       logActivity('outbound', 'create', docRef.id, partnerInfo.partnerName + ' 앞 · 품목 ' + order.items.length + '개 · 총액 ' + fmtMoney(order.total) + '원');
+      // 출고 등록 자체는 미결에 안 쌓여요. 창고이동 완료 눌러야(=내부망에 실제로 반영했다는 뜻) 미결이 생겨요.
       lastRegisteredOrder = { id: docRef.id, ...order, createdAt: new Date() };
       const shipToVal = document.getElementById('regShipToInput').value.trim();
       const receiverVal = document.getElementById('regReceiverInput').value.trim();
@@ -1850,6 +1872,7 @@ function startApp(fbConfig) {
     });
     const o = outboundList.find(x => x.id === id);
     logActivity('outbound', 'done', id, (o ? o.partnerName : '') + ' 앞 출고 창고이동 완료');
+    if (o) whAdjustForOrder(o.partnerName, o.items, +1); // 이제 내부망에도 반영됐으니, 그만큼 미결이 생겨요
     showToast('창고이동 완료 처리했어요.');
   }
 
@@ -1859,6 +1882,7 @@ function startApp(fbConfig) {
     if (!confirm('이 출고 건을 완전히 삭제할까요?\n\n' + (o ? o.partnerName + ' · ' + fmtDateOnly(o.createdAt) : '') + '\n삭제하면 되돌릴 수 없어요.')) return;
     await db.collection('outbound').doc(id).delete();
     logActivity('outbound', 'delete', id, (o ? o.partnerName + ' · 총액 ' + fmtMoney(o.total) + '원' : ''));
+    if (o && o.status === 'done') whAdjustForOrder(o.partnerName, o.items, -1); // 미결에 반영돼 있던 거면 빼줘요
     showToast('출고 건을 삭제했어요.');
   }
 
@@ -1869,6 +1893,7 @@ function startApp(fbConfig) {
     });
     const o = outboundList.find(x => x.id === id);
     logActivity('outbound', 'undone', id, (o ? o.partnerName : '') + ' 앞 출고 창고이동 취소');
+    if (o) whAdjustForOrder(o.partnerName, o.items, -1); // 창고이동이 취소됐으니, 아까 생겼던 미결도 다시 빼요
     showToast('이동완료를 취소했어요.');
   }
 
