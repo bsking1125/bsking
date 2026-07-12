@@ -2192,9 +2192,8 @@ function startApp(fbConfig) {
     let html = '<table><thead><tr><th>날짜</th><th>거래처</th><th>품목수</th><th class="num">총액</th><th>상태</th><th>창고</th><th></th></tr></thead><tbody>';
     filtered.forEach(o => {
       const itemCount = (o.items || []).length;
-      const statusExtra = o.status === 'done' && o.completedBy
-        ? '<div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">' + escapeHtml(o.completedBy) + ' · ' + fmtDate(o.completedAt) + '</div>'
-        : '';
+      const statusExtra = '<div style="font-size:11px; color:var(--ink-soft); margin-top:2px; min-height:14px;">' +
+        (o.status === 'done' && o.completedBy ? escapeHtml(o.completedBy) + ' · ' + fmtDate(o.completedAt) : '') + '</div>';
       html += '<tr><td>' + fmtDateOnly(o.createdAt) + '</td><td class="prod-name">' + escapeHtml(o.partnerName) + '</td>' +
         '<td>' + itemCount + '건</td><td class="num">' + fmtMoney(o.total) + '</td>' +
         '<td><span class="status-pill ' + (o.status === 'done' ? 'status-done' : 'status-pending') + '">' + (o.status === 'done' ? '이동완료' : '이동대기') + '</span>' + statusExtra + '</td>' +
