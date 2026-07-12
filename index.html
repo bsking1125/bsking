@@ -352,10 +352,12 @@
     <div id="outboundBulkEntryBar" style="display:flex; align-items:center; gap:8px; margin-bottom:12px; flex-wrap:wrap;">
       <button class="ghost-btn" id="bulkPrintInvoiceBtn">거래명세표 출력</button>
       <button class="ghost-btn" id="bulkShippingExcelBtn">송장 출력</button>
+      <button class="ghost-btn" id="chooseInvoiceFolderBtn">📁 송장 저장 폴더 지정</button>
       <button class="ghost-btn" id="bulkExcelInvoiceBtn">엑셀 전환</button>
       <button class="ghost-btn" id="bulkEditEntryBtn">수정</button>
       <button class="ghost-btn" id="bulkDeleteEntryBtn" style="color:var(--red); border-color:var(--red);">삭제</button>
     </div>
+    <div id="invoiceFolderLabel" style="font-size:12px; color:var(--ink-soft); margin-bottom:10px;"></div>
     <div id="outboundBulkBar" style="display:none; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap; background:var(--bg); border-radius:8px; padding:10px 12px;">
       <span id="outboundSelectedCount" style="font-size:13px; font-weight:600;"></span>
       <button class="primary-btn" id="bulkConfirmBtn">선택한 건 실행</button>
@@ -1724,7 +1726,69 @@ function startApp(fbConfig) {
 
   let editingOutboundId = null;
   let outboundSelectedIds = new Set();
-  let outboundBulkMode = null; // null | 'print' | 'excel' | 'delete'
+  let outboundBulkMode = null; // null | 'print' | 'excel' | 'delete' | 'edit' | 'shipping'
+
+  /* ============ 송장 엑셀 저장 폴더 지정 ============ */
+  let invoiceDirHandle = null;
+  function idbGet(key) {
+    return new Promise((resolve) => {
+      const req = indexedDB.open('invoiceFolderDB', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('handles');
+      req.onsuccess = () => {
+        const tx = req.result.transaction('handles', 'readonly');
+        const getReq = tx.objectStore('handles').get(key);
+        getReq.onsuccess = () => resolve(getReq.result || null);
+        getReq.onerror = () => resolve(null);
+      };
+      req.onerror = () => resolve(null);
+    });
+  }
+  function idbSet(key, value) {
+    return new Promise((resolve) => {
+      const req = indexedDB.open('invoiceFolderDB', 1);
+      req.onupgradeneeded = () => req.result.createObjectStore('handles');
+      req.onsuccess = () => {
+        const tx = req.result.transaction('handles', 'readwrite');
+        tx.objectStore('handles').put(value, key);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      };
+      req.onerror = () => resolve();
+    });
+  }
+  function updateInvoiceFolderLabel(needsPermission) {
+    const el = document.getElementById('invoiceFolderLabel');
+    if (!el) return;
+    if (!invoiceDirHandle) { el.textContent = '지정 안 해두면 평소처럼 다운로드 폴더로 받아요.'; return; }
+    el.textContent = needsPermission
+      ? '📁 "' + invoiceDirHandle.name + '" 폴더로 지정돼 있어요 (다운로드 시 권한을 다시 확인해요)'
+      : '📁 "' + invoiceDirHandle.name + '" 폴더에 자동으로 저장돼요';
+  }
+  async function tryRestoreInvoiceFolder() {
+    if (!window.showDirectoryPicker) return;
+    const handle = await idbGet('invoiceDir');
+    if (!handle) { updateInvoiceFolderLabel(); return; }
+    try {
+      const perm = await handle.queryPermission({ mode: 'readwrite' });
+      invoiceDirHandle = handle;
+      updateInvoiceFolderLabel(perm !== 'granted');
+    } catch (e) { /* 저장된 핸들이 더 이상 유효하지 않음 */ }
+  }
+  document.getElementById('chooseInvoiceFolderBtn').addEventListener('click', async () => {
+    if (!window.showDirectoryPicker) {
+      showToast('이 브라우저는 폴더 직접 지정을 지원하지 않아요. 크롬이나 엣지에서 사용해주세요.');
+      return;
+    }
+    try {
+      const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+      invoiceDirHandle = handle;
+      await idbSet('invoiceDir', handle);
+      updateInvoiceFolderLabel();
+      showToast('저장 폴더를 지정했어요. 이제부터 여기로 바로 저장돼요.');
+    } catch (e) { /* 사용자가 폴더 선택을 취소함 */ }
+  });
+  tryRestoreInvoiceFolder();
+
   let lastRegisteredOrder = null;
 
   function resetRegisterForm() {
@@ -2141,8 +2205,31 @@ function startApp(fbConfig) {
       ws['!cols'] = [{wch:10},{wch:14},{wch:40},{wch:30},{wch:20}];
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, 's');
-      XLSX.writeFile(wb, '송장출력_' + fmtDateOnly(new Date()) + '.xlsx');
-      showToast(orders.length + '건 송장 엑셀을 다운로드했어요.');
+      const shippingFname = '송장출력_' + fmtDateOnly(new Date()) + '.xlsx';
+
+      if (invoiceDirHandle) {
+        try {
+          const perm = await invoiceDirHandle.requestPermission({ mode: 'readwrite' });
+          if (perm === 'granted') {
+            const wbout = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+            const fileHandle = await invoiceDirHandle.getFileHandle(shippingFname, { create: true });
+            const writable = await fileHandle.createWritable();
+            await writable.write(new Blob([wbout], { type: 'application/octet-stream' }));
+            await writable.close();
+            updateInvoiceFolderLabel();
+            showToast('"' + invoiceDirHandle.name + '" 폴더에 저장했어요: ' + shippingFname);
+          } else {
+            XLSX.writeFile(wb, shippingFname);
+            showToast(orders.length + '건 송장 엑셀을 다운로드했어요.');
+          }
+        } catch (e) {
+          XLSX.writeFile(wb, shippingFname);
+          showToast('지정한 폴더에 저장하지 못해서, 대신 다운로드로 받아드릴게요.');
+        }
+      } else {
+        XLSX.writeFile(wb, shippingFname);
+        showToast(orders.length + '건 송장 엑셀을 다운로드했어요.');
+      }
     } else if (outboundBulkMode === 'excel') {
       showToast(orders.length + '건 엑셀로 묶는 중이에요...');
       const zip = new JSZip();
