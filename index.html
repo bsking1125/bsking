@@ -2200,7 +2200,7 @@ function startApp(fbConfig) {
         '<td><span class="status-pill ' + (o.status === 'done' ? 'status-done' : 'status-pending') + '">' + (o.status === 'done' ? '이동완료' : '이동대기') + '</span>' + statusExtra + '</td>' +
         '<td>' + (o.status === 'done'
           ? escapeHtml(o.warehouseName || '-')
-          : '<select data-wh-pick="' + o.id + '" style="font-size:12px; padding:3px 4px;"><option value="">창고 선택</option>' + orderedWarehouses().map(w => '<option value="' + w.id + '"' + (o.warehouseId === w.id ? ' selected' : '') + '>' + escapeHtml(w.name) + '</option>').join('') + '</select>') +
+          : '<select data-wh-pick="' + o.id + '" style="font-size:13px; font-family:inherit; padding:3px 4px;"><option value="">창고 선택</option>' + orderedWarehouses().map(w => '<option value="' + w.id + '"' + (o.warehouseId === w.id ? ' selected' : '') + '>' + escapeHtml(w.name) + '</option>').join('') + '</select>') +
         '</td>' +
         '<td class="row-actions" style="display:flex; gap:6px; justify-content:center; align-items:center;">' +
         (o.status !== 'done'
@@ -2208,9 +2208,6 @@ function startApp(fbConfig) {
           : '<button data-unmark-done="' + o.id + '" style="color:var(--red);">이동취소</button>') +
         '<button data-view-invoice="' + o.id + '">명세표</button>' +
         '<button data-edit-outbound="' + o.id + '">수정</button>' +
-        (o.status !== 'done'
-          ? '<button data-mark-done="' + o.id + '" style="color:var(--primary-dark);">이동하기</button>'
-          : '<button data-unmark-done="' + o.id + '" style="color:var(--red);">이동취소</button>') +
         (currentUserIsAdmin ? '<button data-remove-outbound="' + o.id + '" style="color:var(--red);">삭제</button>' : '') +
         '</td></tr>';
     });
