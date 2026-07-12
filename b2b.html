@@ -203,6 +203,7 @@
     <button class="tab-btn active" data-tab="register">출고 등록</button>
     <button class="tab-btn" data-tab="outbound-list">출고 내역</button>
     <button class="tab-btn" data-tab="ledger">매출처리</button>
+    <button class="tab-btn" data-tab="promo">홍보품 처리</button>
     <button class="tab-btn" data-tab="products">품목 관리</button>
     <button class="tab-btn" data-tab="partners">거래처 관리</button>
     <button class="tab-btn" data-tab="warehouses">창고 등록</button>
@@ -386,6 +387,32 @@
     <div id="ledgerBulkTotals" style="display:none; text-align:right; font-size:14px; font-weight:700; padding:10px 4px; border-top:1px solid var(--line); margin-top:-1px;"></div>
   </div>
 
+  <!-- 홍보품 처리 -->
+  <div class="tab-panel" data-panel="promo" style="display:none;">
+    <div class="section-head">
+      <div><h2>홍보품 처리</h2><div class="desc">거래처 증정·샘플로 나간 품목을 매달 여기 적어두면, 미결 현황에 "홍보품"으로 쌓여요. 한 달치 다 적으셨으면 아래에서 거래명세표로 뽑고, "매출처리" 탭에서 "홍보품"으로 검색해서 정리하시면 돼요.</div></div>
+    </div>
+    <div class="card" style="margin-bottom:20px;">
+      <div class="add-row">
+        <div class="field" style="flex:none; width:150px;"><label>월일</label><input type="date" id="promoDateInput"></div>
+        <div class="field" style="flex:2; min-width:200px;"><label>제품명</label><input type="text" id="promoProductInput" list="promoProductList" placeholder="품목명 입력 또는 선택"></div>
+        <datalist id="promoProductList"></datalist>
+        <div class="field" style="flex:1; min-width:140px;"><label>규격</label><input type="text" id="promoSpecInput"></div>
+        <div class="field" style="flex:none; width:100px;"><label>수량</label><input type="number" id="promoQtyInput" class="qty" value="1"></div>
+        <div class="field" style="flex:none; width:130px;"><label>홍보가(단가)</label><input type="text" inputmode="numeric" class="money-input" id="promoPriceInput"></div>
+      </div>
+      <button class="primary-btn" id="promoAddBtn">추가</button>
+    </div>
+    <div class="section-head">
+      <div><h2>이번 달까지 입력된 내역</h2><div class="desc" id="promoListDesc"></div></div>
+      <div style="display:flex; gap:8px;">
+        <button class="ghost-btn" id="promoPrintBtn">거래명세표 출력</button>
+        <button class="ghost-btn" id="promoExcelBtn">엑셀 전환</button>
+      </div>
+    </div>
+    <div class="table-scroll" id="promoListArea"></div>
+  </div>
+
   <!-- 품목 관리 -->
   <div class="tab-panel" data-panel="products" style="display:none;">
     <div class="section-head">
@@ -404,6 +431,7 @@
         <div class="field" style="flex:1; min-width:120px;"><label>조합원가</label><input type="text" inputmode="numeric" class="money-input" id="productMemberPriceInput"></div>
         <div class="field" style="flex:1; min-width:120px;"><label>대리점가</label><input type="text" inputmode="numeric" class="money-input" id="productDistPriceInput"></div>
         <div class="field" style="flex:1; min-width:120px;"><label>특판대리점가</label><input type="text" inputmode="numeric" class="money-input" id="productSpecialDistPriceInput"></div>
+        <div class="field" style="flex:1; min-width:120px;"><label>홍보가</label><input type="text" inputmode="numeric" class="money-input" id="productPromoPriceInput"></div>
       </div>
       <button class="primary-btn" id="addProductMasterBtn">품목 추가</button>
     </div>
@@ -1327,10 +1355,11 @@ function startApp(fbConfig) {
       consumerPrice: parseMoneyInputValue(document.getElementById('productConsumerPriceInput').value),
       memberPrice: parseMoneyInputValue(document.getElementById('productMemberPriceInput').value),
       distributorPrice: parseMoneyInputValue(document.getElementById('productDistPriceInput').value),
-      specialDistributorPrice: parseMoneyInputValue(document.getElementById('productSpecialDistPriceInput').value)
+      specialDistributorPrice: parseMoneyInputValue(document.getElementById('productSpecialDistPriceInput').value),
+      promoPrice: parseMoneyInputValue(document.getElementById('productPromoPriceInput').value)
     };
   }
-  ['productConsumerPriceInput','productMemberPriceInput','productDistPriceInput','productSpecialDistPriceInput'].forEach(id => {
+  ['productConsumerPriceInput','productMemberPriceInput','productDistPriceInput','productSpecialDistPriceInput','productPromoPriceInput'].forEach(id => {
     attachMoneyInputFormatting(document.getElementById(id));
   });
   document.getElementById('addProductMasterBtn').addEventListener('click', async () => {
@@ -1342,7 +1371,7 @@ function startApp(fbConfig) {
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     });
     logActivity('product', 'create', null, f.name + ' 품목 등록');
-    ['productNameInput','productSpecInput','productBarcodeInput','productBoxQtyInput','productConsumerPriceInput','productMemberPriceInput','productDistPriceInput','productSpecialDistPriceInput'].forEach(id => document.getElementById(id).value = '');
+    ['productNameInput','productSpecInput','productBarcodeInput','productBoxQtyInput','productConsumerPriceInput','productMemberPriceInput','productDistPriceInput','productSpecialDistPriceInput','productPromoPriceInput'].forEach(id => document.getElementById(id).value = '');
     showToast('"' + f.name + '" 품목을 등록했어요.');
   });
 
@@ -1358,18 +1387,20 @@ function startApp(fbConfig) {
     const memberPrice = ask('조합원가', p.memberPrice || 0); if (memberPrice === null) return;
     const distributorPrice = ask('대리점가', p.distributorPrice || 0); if (distributorPrice === null) return;
     const specialDistributorPrice = ask('특판대리점가', p.specialDistributorPrice || 0); if (specialDistributorPrice === null) return;
+    const promoPrice = ask('홍보가', p.promoPrice || 0); if (promoPrice === null) return;
     const after = {
       name: name.trim() || p.name, spec, barcode,
       unitsPerBox: Math.round(Number(unitsPerBox)) || 0,
       consumerPrice: parseMoneyInputValue(consumerPrice),
       memberPrice: parseMoneyInputValue(memberPrice),
       distributorPrice: parseMoneyInputValue(distributorPrice),
-      specialDistributorPrice: parseMoneyInputValue(specialDistributorPrice)
+      specialDistributorPrice: parseMoneyInputValue(specialDistributorPrice),
+      promoPrice: parseMoneyInputValue(promoPrice)
     };
     after.defaultPrice = after.distributorPrice || after.consumerPrice || 0;
     await db.collection('b2bProducts').doc(id).update(after);
     const summary = diffSummary(
-      { name: '품목명', spec: '규격', barcode: '바코드', unitsPerBox: '박스입수량', consumerPrice: '소비자가', memberPrice: '조합원가', distributorPrice: '대리점가', specialDistributorPrice: '특판대리점가' },
+      { name: '품목명', spec: '규격', barcode: '바코드', unitsPerBox: '박스입수량', consumerPrice: '소비자가', memberPrice: '조합원가', distributorPrice: '대리점가', specialDistributorPrice: '특판대리점가', promoPrice: '홍보가' },
       p, after
     );
     logActivity('product', 'update', id, summary);
@@ -1538,7 +1569,7 @@ function startApp(fbConfig) {
     document.getElementById('regPartnerSelect').innerHTML = opts;
     document.getElementById('regPartnerSelect').value = selected; // 목록이 갱신돼도 고르고 있던 값 유지
     document.getElementById('outFilterPartner').innerHTML = '<option value="">전체 거래처</option>' + list.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
-    document.getElementById('ledgerFilterPartner').innerHTML = '<option value="">전체 거래처</option>' + list.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
+    document.getElementById('ledgerFilterPartner').innerHTML = '<option value="">전체 거래처</option><option value="__promo__">🎁 홍보품</option>' + list.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
   }
 
   document.getElementById('regPartnerSelect').addEventListener('change', () => {
@@ -2015,6 +2046,11 @@ function startApp(fbConfig) {
   const MIN_INVOICE_ROWS = 20; // 원본 양식처럼 빈 줄도 넉넉하게 채워서 보여줘요 (엑셀 실제 파일은 15줄까지만 들어가요)
   function buildInvoiceSheetHtml(order) {
     const c = company || {};
+    // 홍보품처럼 "공급받는자"를 다른 이름으로 인쇄해야 하는 경우, order.invoicePartnerName 등이 있으면 그걸 우선 써요.
+    const invName = order.invoicePartnerName || order.partnerName;
+    const invBizNo = order.invoicePartnerBizNo !== undefined ? order.invoicePartnerBizNo : order.partnerBizNo;
+    const invCeo = order.invoicePartnerCeo !== undefined ? order.invoicePartnerCeo : order.partnerCeo;
+    const invAddress = order.invoicePartnerAddress !== undefined ? order.invoicePartnerAddress : order.partnerAddress;
     const rows = Math.max(MIN_INVOICE_ROWS, (order.items || []).length);
     let itemsHtml = '';
     for (let i = 0; i < rows; i++) {
@@ -2043,14 +2079,14 @@ function startApp(fbConfig) {
             '<img src="./company-stamp.png" alt="" style="position:absolute; width:38px; height:38px; top:18px; right:8px; pointer-events:none;" onerror="this.style.display=\'none\'">' +
           '</td>' +
           '<td class="vert-label" rowspan="5">공급받는자</td>' +
-          '<td class="label" style="width:70px;">등록번호</td><td colspan="3">' + escapeHtml(order.partnerBizNo||'-') + '</td>' +
+          '<td class="label" style="width:70px;">등록번호</td><td colspan="3">' + escapeHtml(invBizNo||'-') + '</td>' +
         '</tr>' +
         '<tr><td class="label">상호</td><td colspan="3">' + escapeHtml(c.name||'(우리 회사 정보 미등록)') + '</td>' +
-             '<td class="label">상호</td><td colspan="3">' + escapeHtml(order.partnerName||'-') + '</td></tr>' +
+             '<td class="label">상호</td><td colspan="3">' + escapeHtml(invName||'-') + '</td></tr>' +
         '<tr><td class="label">대표자</td><td colspan="3">' + escapeHtml(c.ceo||'-') + '</td>' +
-             '<td class="label">대표자</td><td colspan="3">' + escapeHtml(order.partnerCeo||'-') + '</td></tr>' +
+             '<td class="label">대표자</td><td colspan="3">' + escapeHtml(invCeo||'-') + '</td></tr>' +
         '<tr><td class="label">주소</td><td colspan="3">' + escapeHtml(c.address||'-') + '</td>' +
-             '<td class="label">주소</td><td colspan="3">' + escapeHtml(order.partnerAddress||'-') + '</td></tr>' +
+             '<td class="label">주소</td><td colspan="3">' + escapeHtml(invAddress||'-') + '</td></tr>' +
         '<tr><td class="label">연락처</td><td colspan="3">' + escapeHtml(c.phone||'-') + '</td>' +
              '<td class="label">검수자</td><td colspan="3">' + escapeHtml(order.partnerContact||'-') + '</td></tr>' +
       '</table>' +
@@ -2112,6 +2148,10 @@ function startApp(fbConfig) {
 
   async function buildInvoiceExcelBlob(order) {
     const c = company || {};
+    const invName = order.invoicePartnerName || order.partnerName;
+    const invBizNo = order.invoicePartnerBizNo !== undefined ? order.invoicePartnerBizNo : order.partnerBizNo;
+    const invCeo = order.invoicePartnerCeo !== undefined ? order.invoicePartnerCeo : order.partnerCeo;
+    const invAddress = order.invoicePartnerAddress !== undefined ? order.invoicePartnerAddress : order.partnerAddress;
     let resp;
     try {
       resp = await fetch(INVOICE_TEMPLATE_URL);
@@ -2131,10 +2171,10 @@ function startApp(fbConfig) {
     xml = patchCell(xml, 'D7', dash(c.ceo), false);
     xml = patchCell(xml, 'D8', dash(c.address), false);
     xml = patchCell(xml, 'D9', dash(c.phone), false);
-    xml = patchCell(xml, 'J5', dash(order.partnerBizNo), false);
-    xml = patchCell(xml, 'J6', dash(order.partnerName), false);
-    xml = patchCell(xml, 'J7', dash(order.partnerCeo), false);
-    xml = patchCell(xml, 'J8', dash(order.partnerAddress), false);
+    xml = patchCell(xml, 'J5', dash(invBizNo), false);
+    xml = patchCell(xml, 'J6', dash(invName), false);
+    xml = patchCell(xml, 'J7', dash(invCeo), false);
+    xml = patchCell(xml, 'J8', dash(invAddress), false);
 
     const items = (order.items || []).slice(0, INVOICE_MAX_ITEM_ROWS);
     items.forEach((it, i) => {
@@ -2449,12 +2489,13 @@ function startApp(fbConfig) {
     const area = document.getElementById('productListArea');
     const list = orderedProducts();
     if (!list.length) { area.innerHTML = '<div class="empty">아직 등록된 품목이 없어요.</div>'; return; }
-    let html = '<div class="table-scroll"><table><thead><tr><th>바코드</th><th>품목명</th><th>규격</th><th class="num">박스입수량</th><th class="num">소비자가</th><th class="num">조합원가</th><th class="num">대리점가</th><th class="num">특판대리점가</th><th></th></tr></thead><tbody>';
+    let html = '<div class="table-scroll"><table><thead><tr><th>바코드</th><th>품목명</th><th>규격</th><th class="num">박스입수량</th><th class="num">소비자가</th><th class="num">조합원가</th><th class="num">대리점가</th><th class="num">특판대리점가</th><th class="num">홍보가</th><th></th></tr></thead><tbody>';
     list.forEach(p => {
       html += '<tr><td>' + escapeHtml(p.barcode||'-') + '</td><td class="prod-name">' + escapeHtml(p.name) + '</td><td>' + escapeHtml(p.spec||'-') + '</td>' +
         '<td class="num">' + (p.unitsPerBox||'-') + '</td>' +
         '<td class="num">' + fmtMoney(p.consumerPrice) + '</td><td class="num">' + fmtMoney(p.memberPrice) + '</td>' +
         '<td class="num">' + fmtMoney(p.distributorPrice) + '</td><td class="num">' + fmtMoney(p.specialDistributorPrice) + '</td>' +
+        '<td class="num">' + fmtMoney(p.promoPrice) + '</td>' +
         '<td class="row-actions"><button data-edit-product="' + p.id + '">수정</button>' + (currentUserIsAdmin ? ' <button data-remove-product="' + p.id + '">삭제</button>' : '') + '</td></tr>';
     });
     html += '</tbody></table></div>';
@@ -2561,7 +2602,8 @@ function startApp(fbConfig) {
     });
 
     rows = rows.filter(r => {
-      if (partnerFilter && r.partnerId !== partnerFilter) return false;
+      if (partnerFilter === '__promo__' && r.partnerName !== '홍보품') return false;
+      if (partnerFilter && partnerFilter !== '__promo__' && r.partnerId !== partnerFilter) return false;
       if (productFilter && !(r.name||'').toLowerCase().includes(productFilter)) return false;
       if (from && r.date < from) return false;
       if (to && r.date > to) return false;
@@ -2685,6 +2727,179 @@ function startApp(fbConfig) {
     showToast('데이터를 백업 파일로 다운로드했어요.');
   });
 
+  /* ============ 홍보품 처리 ============ */
+  const PROMO_PARTNER_NAME = '홍보품';
+  function promoMonthOf(dateStr) { return (dateStr || '').slice(0, 7); }
+
+  document.getElementById('promoDateInput').value = fmtDateOnly(new Date());
+  document.getElementById('promoProductInput').addEventListener('change', () => {
+    const name = document.getElementById('promoProductInput').value.trim();
+    const p = productMaster.find(x => x.name === name);
+    if (p) {
+      document.getElementById('promoSpecInput').value = p.spec || '';
+      document.getElementById('promoPriceInput').value = formatMoneyInputValue(String(p.promoPrice || 0));
+    }
+  });
+
+  function getOpenPromoItems() {
+    const items = [];
+    outboundList.forEach(o => {
+      if (o.partnerName !== PROMO_PARTNER_NAME || o.salesProcessed) return;
+      (o.items || []).forEach((it, idx) => { items.push({ ...it, orderId: o.id, idx }); });
+    });
+    items.sort((a, b) => (a.itemDate || '').localeCompare(b.itemDate || ''));
+    return items;
+  }
+
+  document.getElementById('promoAddBtn').addEventListener('click', async () => {
+    const dateStr = document.getElementById('promoDateInput').value;
+    const name = document.getElementById('promoProductInput').value.trim();
+    const spec = document.getElementById('promoSpecInput').value.trim();
+    const qty = Math.round(Number(document.getElementById('promoQtyInput').value)) || 0;
+    const price = parseMoneyInputValue(document.getElementById('promoPriceInput').value);
+    if (!dateStr) { showToast('월일을 선택해주세요.'); return; }
+    if (!name) { showToast('제품명을 입력해주세요.'); return; }
+    if (qty <= 0) { showToast('수량은 1 이상이어야 해요.'); return; }
+
+    const month = promoMonthOf(dateStr);
+    const newItem = { name, spec, price, qty, amount: price * qty, note: '', itemDate: dateStr };
+    const order = outboundList.find(o => o.partnerName === PROMO_PARTNER_NAME && o.promoMonth === month && !o.salesProcessed);
+
+    if (order) {
+      const newItems = [...(order.items || []), newItem];
+      const totals = computeTotals(newItems);
+      await db.collection('b2bOutbound').doc(order.id).update({ items: newItems, subtotal: totals.subtotal, vat: totals.vat, total: totals.total });
+    } else {
+      const c = company || {};
+      const totals = computeTotals([newItem]);
+      await db.collection('b2bOutbound').add({
+        partnerName: PROMO_PARTNER_NAME, partnerId: null,
+        partnerBizNo: '', partnerCeo: '', partnerAddress: '', partnerContact: '',
+        invoicePartnerName: c.name || '', invoicePartnerBizNo: c.bizNo || '', invoicePartnerCeo: c.ceo || '', invoicePartnerAddress: c.address || '',
+        shipTo: '', receiver: '', receiverPhone: '', shipAddress: '',
+        items: [newItem], subtotal: totals.subtotal, vat: totals.vat, total: totals.total,
+        status: 'done', promoMonth: month,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(), createdBy: auth.currentUser.email,
+        completedAt: firebase.firestore.FieldValue.serverTimestamp(), completedBy: auth.currentUser.email
+      });
+    }
+    whAdjustForOrder(PROMO_PARTNER_NAME, [newItem], +1);
+    logActivity('outbound', 'create', null, '홍보품 사용 등록: ' + name + ' ' + qty + '개 (' + dateStr + ')');
+    document.getElementById('promoProductInput').value = '';
+    document.getElementById('promoSpecInput').value = '';
+    document.getElementById('promoQtyInput').value = 1;
+    document.getElementById('promoPriceInput').value = '';
+    showToast('홍보품 사용 내역을 추가했어요.');
+  });
+
+  async function editPromoItem(key) {
+    const [orderId, idxStr] = key.split('||');
+    const idx = Number(idxStr);
+    const order = outboundList.find(o => o.id === orderId);
+    if (!order) return;
+    const item = order.items[idx];
+    const ask = (label, cur) => prompt(label, cur);
+    const dateStr = ask('월일 (YYYY-MM-DD)', item.itemDate || ''); if (dateStr === null) return;
+    const qtyStr = ask('수량', item.qty); if (qtyStr === null) return;
+    const priceStr = ask('단가', item.price); if (priceStr === null) return;
+    const newQty = Math.round(Number(qtyStr)) || 0;
+    const newPrice = parseMoneyInputValue(priceStr);
+    const newItems = [...order.items];
+    const oldItem = newItems[idx];
+    const updatedItem = { ...oldItem, qty: newQty, price: newPrice, amount: newQty * newPrice, itemDate: dateStr };
+    newItems[idx] = updatedItem;
+    whAdjustForOrder(PROMO_PARTNER_NAME, [oldItem], -1);
+    whAdjustForOrder(PROMO_PARTNER_NAME, [updatedItem], +1);
+    const totals = computeTotals(newItems);
+    await db.collection('b2bOutbound').doc(orderId).update({ items: newItems, subtotal: totals.subtotal, vat: totals.vat, total: totals.total });
+    logActivity('outbound', 'update', orderId, '홍보품 내역 수정: ' + updatedItem.name);
+    showToast('수정했어요.');
+  }
+
+  async function removePromoItem(key) {
+    const [orderId, idxStr] = key.split('||');
+    const idx = Number(idxStr);
+    const order = outboundList.find(o => o.id === orderId);
+    if (!order) return;
+    if (!confirm('"' + order.items[idx].name + '" 항목을 삭제할까요?')) return;
+    const removed = order.items[idx];
+    const newItems = order.items.filter((_, i) => i !== idx);
+    whAdjustForOrder(PROMO_PARTNER_NAME, [removed], -1);
+    if (!newItems.length) {
+      await db.collection('b2bOutbound').doc(orderId).delete();
+    } else {
+      const totals = computeTotals(newItems);
+      await db.collection('b2bOutbound').doc(orderId).update({ items: newItems, subtotal: totals.subtotal, vat: totals.vat, total: totals.total });
+    }
+    logActivity('outbound', 'delete', orderId, '홍보품 내역 삭제: ' + removed.name);
+    showToast('삭제했어요.');
+  }
+
+  function renderPromoList() {
+    const area = document.getElementById('promoListArea');
+    if (!area) return;
+    const listEl = document.getElementById('promoProductList');
+    if (listEl) listEl.innerHTML = productMaster.map(p => '<option value="' + escapeHtml(p.name) + '">').join('');
+    const items = getOpenPromoItems();
+    const descEl = document.getElementById('promoListDesc');
+    if (!items.length) {
+      if (descEl) descEl.textContent = '아직 입력된 게 없어요.';
+      area.innerHTML = '<div class="empty">아직 입력된 홍보품 사용 내역이 없어요.</div>';
+      return;
+    }
+    if (descEl) descEl.textContent = '지금까지 ' + items.length + '건 · 가장 최근 입력일: ' + (items[items.length - 1].itemDate || '-');
+    let html = '<table><thead><tr><th>월일</th><th>제품명</th><th>규격</th><th class="num">수량</th><th class="num">단가</th><th class="num">금액</th><th></th></tr></thead><tbody>';
+    items.forEach(it => {
+      html += '<tr><td>' + escapeHtml(it.itemDate || '-') + '</td><td class="prod-name">' + escapeHtml(it.name) + '</td><td>' + escapeHtml(it.spec||'-') + '</td>' +
+        '<td class="num">' + it.qty + '</td><td class="num">' + fmtMoney(it.price) + '</td><td class="num">' + fmtMoney(it.amount) + '</td>' +
+        '<td class="row-actions"><button data-promo-edit="' + it.orderId + '||' + it.idx + '">수정</button> <button data-promo-remove="' + it.orderId + '||' + it.idx + '" style="color:var(--red);">삭제</button></td></tr>';
+    });
+    html += '</tbody></table>';
+    area.innerHTML = html;
+    area.querySelectorAll('[data-promo-edit]').forEach(btn => btn.addEventListener('click', () => editPromoItem(btn.dataset.promoEdit)));
+    area.querySelectorAll('[data-promo-remove]').forEach(btn => btn.addEventListener('click', () => removePromoItem(btn.dataset.promoRemove)));
+  }
+
+  document.getElementById('promoPrintBtn').addEventListener('click', () => {
+    const items = getOpenPromoItems();
+    if (!items.length) { showToast('출력할 내역이 없어요.'); return; }
+    const baseOrder = outboundList.find(o => o.partnerName === PROMO_PARTNER_NAME && !o.salesProcessed);
+    const chunks = [];
+    for (let i = 0; i < items.length; i += INVOICE_MAX_ITEM_ROWS) chunks.push(items.slice(i, i + INVOICE_MAX_ITEM_ROWS));
+    const virtualOrders = chunks.map(chunk => ({ ...baseOrder, items: chunk, createdAt: new Date() }));
+    const html = virtualOrders.map((o, i) => {
+      const sheetHtml = buildInvoiceSheetHtml(o);
+      return '<div style="' + (i < virtualOrders.length - 1 ? 'page-break-after: always;' : '') + '">' + sheetHtml + '</div>';
+    }).join('');
+    document.getElementById('invoiceContent').innerHTML = html;
+    document.getElementById('invoiceModal').style.display = 'flex';
+    lastShownOrder = virtualOrders.length === 1 ? virtualOrders[0] : null;
+  });
+
+  document.getElementById('promoExcelBtn').addEventListener('click', async () => {
+    const items = getOpenPromoItems();
+    if (!items.length) { showToast('내보낼 내역이 없어요.'); return; }
+    const baseOrder = outboundList.find(o => o.partnerName === PROMO_PARTNER_NAME && !o.salesProcessed);
+    const chunks = [];
+    for (let i = 0; i < items.length; i += INVOICE_MAX_ITEM_ROWS) chunks.push(items.slice(i, i + INVOICE_MAX_ITEM_ROWS));
+    const virtualOrders = chunks.map(chunk => ({ ...baseOrder, items: chunk, createdAt: new Date() }));
+    showToast('엑셀로 묶는 중이에요...');
+    const zip = new JSZip();
+    try {
+      for (let i = 0; i < virtualOrders.length; i++) {
+        const result = await buildInvoiceExcelBlob(virtualOrders[i]);
+        zip.file((i + 1) + '_' + result.fname, result.blob);
+      }
+    } catch (e) { showToast(e.message); return; }
+    const outBlob = await zip.generateAsync({ type: 'blob' });
+    const url = URL.createObjectURL(outBlob);
+    const a = document.createElement('a');
+    a.href = url; a.download = '홍보품_거래명세표_' + fmtDateOnly(new Date()) + '.zip';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    showToast('엑셀로 저장했어요.');
+  });
+
   function renderAll() {
     refreshPartnerSelects();
     renderPartnerList();
@@ -2695,6 +2910,7 @@ function startApp(fbConfig) {
     renderLedger();
     renderPendingBanner();
     whRenderStockTable();
+    renderPromoList();
   }
 
   /* ============ 탭 전환 ============ */
