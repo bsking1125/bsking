@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>최뚜비</title>
+<title>B2B 관리</title>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#2F6F4E">
 <link rel="apple-touch-icon" href="icon-192.png">
@@ -180,37 +180,16 @@
   </div>
 </div>
 
-<div id="hubGate" class="center-screen" style="display:none;">
-  <div class="center-box" style="max-width:480px; text-align:center;">
-    <h1>어떤 걸 여실래요?</h1>
-    <div class="sub" style="margin-bottom:22px;">같은 계정으로 접근 권한이 있는 앱들을 쓸 수 있어요. 필요할 때 언제든 서로 넘어갈 수 있어요.</div>
-    <div style="display:flex; flex-direction:column; gap:12px;">
-      <button id="hubGoWarehouseBtn" class="primary-btn" style="padding:18px; font-size:15px; text-align:left; display:none;">
-        🚚 창고 관리<br><span style="font-weight:400; font-size:12px; opacity:0.85;">거래명세표 만들고, 창고이동 관리해요</span>
-      </button>
-      <button id="hubGoOnlineBtn" class="ghost-btn" style="padding:18px; font-size:15px; text-align:left; display:none;">
-        📦 온라인 관리<br><span style="font-weight:400; font-size:12px; color:var(--ink-soft);">온라인 채널별 미결 재고를 관리해요</span>
-      </button>
-      <button id="hubGoB2BBtn" class="ghost-btn" style="padding:18px; font-size:15px; text-align:left; display:none;">
-        🏢 B2B 관리<br><span style="font-weight:400; font-size:12px; color:var(--ink-soft);">B2B 거래처 출고를 관리해요</span>
-      </button>
-    </div>
-    <div style="margin-top:20px;">
-      <button class="ghost-btn" id="hubLogoutBtn" style="border:none; color:var(--ink-soft); text-decoration:underline;">로그아웃</button>
-    </div>
-  </div>
-</div>
-
 <div class="wrap" id="appWrap" style="display:none;">
 
   <div class="topbar">
     <div>
-      <div class="title">창고 관리</div>
+      <div class="title">B2B 관리</div>
       <div class="subtitle" style="margin:2px 0 0;">출고할 때마다 거래명세표를 만들고, 창고이동을 놓치지 않게 관리해요</div>
     </div>
     <div class="user-chip">
+      <a href="./index.html" id="goWarehouseLink" class="ghost-btn" style="text-decoration:none; display:none;">🚚 창고 관리로 이동</a>
       <a href="./online.html" id="goOnlineLink" class="ghost-btn" style="text-decoration:none; display:none;">📦 온라인 관리로 이동</a>
-      <a href="./b2b.html" id="goB2BLink" class="ghost-btn" style="text-decoration:none; display:none;">🏢 B2B 관리로 이동</a>
       <button id="dataBackupBtn" class="ghost-btn" style="display:none;">💾 데이터 백업</button>
       <span id="currentUserEmail"></span>
       <button class="ghost-btn" id="logoutBtn">로그아웃</button>
@@ -420,6 +399,7 @@
   <div class="tab-panel" data-panel="products" style="display:none;">
     <div class="section-head">
       <div><h2>품목 등록</h2><div class="desc">여기 등록해둔 품목명·규격·바코드로 출고 등록할 때 검색이 돼요.</div></div>
+      <button class="ghost-btn" id="importProductsFromWarehouseBtn" style="display:none;">📥 창고관리에서 품목 가져오기</button>
     </div>
     <div class="card" style="margin-bottom:20px;">
       <div class="add-row">
@@ -691,7 +671,6 @@ function startApp(fbConfig) {
     if (!user) {
       if (approvalsUnsub) { approvalsUnsub(); approvalsUnsub = null; }
       document.getElementById('appWrap').style.display = 'none';
-      document.getElementById('hubGate').style.display = 'none';
       document.getElementById('noAccessGate').style.display = 'none';
       document.getElementById('pendingGate').style.display = 'none';
       document.getElementById('loginGate').style.display = 'flex';
@@ -699,7 +678,7 @@ function startApp(fbConfig) {
     }
 
     if (isAdminEmail(user.email)) {
-      enterApp(user, true, true, true, true);
+      enterApp(user, true, true, true);
       return;
     }
 
@@ -707,21 +686,17 @@ function startApp(fbConfig) {
     // (관리자가 승인 버튼을 누르는 순간 이 화면이 자동으로 앱으로 넘어가요)
     unsubscribeOwnProfile = db.collection('users').doc(user.uid).onSnapshot(doc => {
       const approved = doc.exists && doc.data().approved === true;
+      const hasB2B = doc.exists && doc.data().b2bAccess === true;
       const hasWarehouse = doc.exists && doc.data().warehouseAccess === true;
       const hasOnline = doc.exists && doc.data().onlineAccess === true;
-      const hasB2B = doc.exists && doc.data().b2bAccess === true;
-      const accessCount = [hasWarehouse, hasOnline, hasB2B].filter(Boolean).length;
-      if (approved && accessCount >= 2) {
-        enterApp(user, false, hasWarehouse, hasOnline, hasB2B); // 2개 이상이면 선택 화면
+      if (approved && hasB2B) {
+        enterApp(user, false, hasWarehouse, hasOnline);
       } else if (approved && hasWarehouse) {
-        enterApp(user, false, true, false, false); // 창고 관리만 있으면 바로 진입
+        window.location.href = './index.html'; // B2B 권한은 없고 창고 관리 권한만 있으면 그쪽으로 이동
       } else if (approved && hasOnline) {
-        window.location.href = './online.html'; // 온라인 관리만 있으면 그쪽으로 이동
-      } else if (approved && hasB2B) {
-        window.location.href = './b2b.html'; // B2B 관리만 있으면 그쪽으로 이동
+        window.location.href = './online.html'; // B2B 권한은 없고 온라인 권한만 있으면 그쪽으로 이동
       } else if (approved) {
         document.getElementById('appWrap').style.display = 'none';
-        document.getElementById('hubGate').style.display = 'none';
         document.getElementById('loginGate').style.display = 'none';
         document.getElementById('pendingGate').style.display = 'none';
         document.getElementById('noAccessGate').style.display = 'flex';
@@ -740,25 +715,15 @@ function startApp(fbConfig) {
     });
   });
 
-  function enterApp(user, admin, hasWarehouseAccess, hasOnlineAccess, hasB2BAccess) {
+  function enterApp(user, admin, hasWarehouseAccess, hasOnlineAccess) {
     document.getElementById('pendingGate').style.display = 'none';
     document.getElementById('loginGate').style.display = 'none';
     document.getElementById('noAccessGate').style.display = 'none';
+    document.getElementById('goWarehouseLink').style.display = (admin || hasWarehouseAccess) ? '' : 'none';
     document.getElementById('goOnlineLink').style.display = (admin || hasOnlineAccess) ? '' : 'none';
-    document.getElementById('goB2BLink').style.display = (admin || hasB2BAccess) ? '' : 'none';
     document.getElementById('dataBackupBtn').style.display = admin ? '' : 'none';
-    const accessCount = [hasWarehouseAccess, hasOnlineAccess, hasB2BAccess].filter(Boolean).length;
-    const skipHub = accessCount < 2;
-    if (skipHub) {
-      document.getElementById('hubGate').style.display = 'none';
-      document.getElementById('appWrap').style.display = '';
-    } else {
-      document.getElementById('hubGate').style.display = 'flex';
-      document.getElementById('appWrap').style.display = 'none';
-      document.getElementById('hubGoWarehouseBtn').style.display = hasWarehouseAccess ? '' : 'none';
-      document.getElementById('hubGoOnlineBtn').style.display = hasOnlineAccess ? '' : 'none';
-      document.getElementById('hubGoB2BBtn').style.display = hasB2BAccess ? '' : 'none';
-    }
+    document.getElementById('importProductsFromWarehouseBtn').style.display = admin ? '' : 'none';
+    document.getElementById('appWrap').style.display = '';
     document.getElementById('currentUserEmail').textContent = user.email + (admin ? ' (관리자)' : '');
     document.getElementById('approvalsTabBtn').style.display = admin ? '' : 'none';
     document.getElementById('activityLogTabBtn').style.display = admin ? '' : 'none';
@@ -782,18 +747,6 @@ function startApp(fbConfig) {
     initRealtimeListeners();
     if (admin) initApprovalsListener();
   }
-
-  document.getElementById('hubGoWarehouseBtn').addEventListener('click', () => {
-    document.getElementById('hubGate').style.display = 'none';
-    document.getElementById('appWrap').style.display = '';
-  });
-  document.getElementById('hubGoOnlineBtn').addEventListener('click', () => {
-    window.location.href = './online.html';
-  });
-  document.getElementById('hubGoB2BBtn').addEventListener('click', () => {
-    window.location.href = './b2b.html';
-  });
-  document.getElementById('hubLogoutBtn').addEventListener('click', () => auth.signOut());
 
   let approvalsUnsub = null;
   let allMembers = [];
@@ -819,21 +772,19 @@ function startApp(fbConfig) {
       return 0;
     });
 
-    let html = '<table><thead><tr><th>이메일</th><th>가입일시</th><th>상태</th><th>🚚 창고지기</th><th>📦 온라인 재고</th><th>🏢 B2B</th><th></th></tr></thead><tbody>';
+    let html = '<table><thead><tr><th>이메일</th><th>가입일시</th><th>상태</th><th>🚚 창고지기</th><th>📦 온라인 재고</th><th></th></tr></thead><tbody>';
     sorted.forEach(u => {
       if (!u.approved) {
         html += '<tr><td class="prod-name">' + escapeHtml(u.email) + '</td><td>' + fmtDate(u.createdAt) + '</td>' +
           '<td><span class="status-pill status-pending">대기중</span></td>' +
           '<td><input type="checkbox" data-new-warehouse="' + u.id + '"></td>' +
           '<td><input type="checkbox" data-new-online="' + u.id + '"></td>' +
-          '<td><input type="checkbox" data-new-b2b="' + u.id + '"></td>' +
           '<td class="row-actions"><button class="primary-btn" style="padding:6px 12px; font-size:12px;" data-approve="' + u.id + '">승인</button></td></tr>';
       } else {
         html += '<tr><td class="prod-name">' + escapeHtml(u.email) + '</td><td>' + fmtDate(u.createdAt) + '</td>' +
           '<td><span class="status-pill status-done">승인됨</span></td>' +
           '<td><input type="checkbox" data-toggle-warehouse="' + u.id + '" ' + (u.warehouseAccess ? 'checked' : '') + '></td>' +
           '<td><input type="checkbox" data-toggle-online="' + u.id + '" ' + (u.onlineAccess ? 'checked' : '') + '></td>' +
-          '<td><input type="checkbox" data-toggle-b2b="' + u.id + '" ' + (u.b2bAccess ? 'checked' : '') + '></td>' +
           '<td></td></tr>';
       }
     });
@@ -845,13 +796,12 @@ function startApp(fbConfig) {
         const id = btn.dataset.approve;
         const warehouseAccess = area.querySelector('[data-new-warehouse="' + id + '"]').checked;
         const onlineAccess = area.querySelector('[data-new-online="' + id + '"]').checked;
-        const b2bAccess = area.querySelector('[data-new-b2b="' + id + '"]').checked;
-        if (!warehouseAccess && !onlineAccess && !b2bAccess) {
+        if (!warehouseAccess && !onlineAccess) {
           showToast('최소 하나는 접근 권한을 체크한 뒤 승인해주세요.');
           return;
         }
         await db.collection('users').doc(id).update({
-          approved: true, warehouseAccess, onlineAccess, b2bAccess,
+          approved: true, warehouseAccess, onlineAccess,
           approvedAt: firebase.firestore.FieldValue.serverTimestamp(), approvedBy: auth.currentUser.email
         });
         showToast('승인했어요.');
@@ -867,12 +817,6 @@ function startApp(fbConfig) {
       cb.addEventListener('change', async () => {
         await db.collection('users').doc(cb.dataset.toggleOnline).update({ onlineAccess: cb.checked });
         showToast('온라인 재고 접근 권한을 ' + (cb.checked ? '켰어요.' : '껐어요.'));
-      });
-    });
-    area.querySelectorAll('[data-toggle-b2b]').forEach(cb => {
-      cb.addEventListener('change', async () => {
-        await db.collection('users').doc(cb.dataset.toggleB2b).update({ b2bAccess: cb.checked });
-        showToast('B2B 접근 권한을 ' + (cb.checked ? '켰어요.' : '껐어요.'));
       });
     });
   }
@@ -921,7 +865,7 @@ function startApp(fbConfig) {
     if (listenersStarted) return;
     listenersStarted = true;
 
-    db.collection('warehouseInventory').doc('data').onSnapshot(doc => {
+    db.collection('b2bInventory').doc('data').onSnapshot(doc => {
       whData = doc.exists ? (doc.data() || {}) : {};
       if (!whData.products) whData.products = {};
       if (!whData.storeOrder) whData.storeOrder = [];
@@ -929,22 +873,22 @@ function startApp(fbConfig) {
       whRenderStockTable();
     }, err => showToast('미결 현황을 불러오지 못했어요: ' + err.message));
 
-    db.collection('partners').onSnapshot(snap => {
+    db.collection('b2bPartners').onSnapshot(snap => {
       partners = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       renderAll();
     }, err => showToast('거래처 정보를 불러오지 못했어요: ' + err.message));
 
-    db.collection('warehouses').onSnapshot(snap => {
+    db.collection('b2bWarehouses').onSnapshot(snap => {
       warehouses = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       renderAll();
     }, err => showToast('창고 정보를 불러오지 못했어요: ' + err.message));
 
-    db.collection('products').onSnapshot(snap => {
+    db.collection('b2bProducts').onSnapshot(snap => {
       productMaster = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       renderAll();
     }, err => showToast('품목 정보를 불러오지 못했어요: ' + err.message));
 
-    db.collection('outbound').orderBy('createdAt', 'desc').limit(500).onSnapshot(snap => {
+    db.collection('b2bOutbound').orderBy('createdAt', 'desc').limit(500).onSnapshot(snap => {
       outboundList = snap.docs.map(d => ({ id: d.id, ...d.data() }));
       if (editingOutboundId && !outboundList.some(o => o.id === editingOutboundId)) {
         resetRegisterForm(); // 수정하려던 건이 이미 삭제됐거나 없으면 수정 모드를 자동으로 풀어줘요
@@ -966,7 +910,7 @@ function startApp(fbConfig) {
 
     // 관리자만 볼 수 있는 감사 로그 (변경 이력)
     if (currentUserIsAdmin) {
-      db.collection('activityLog').orderBy('at', 'desc').limit(300).onSnapshot(snap => {
+      db.collection('b2bActivityLog').orderBy('at', 'desc').limit(300).onSnapshot(snap => {
         activityLogEntries = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         renderActivityLog();
       }, err => showToast('변경 이력을 불러오지 못했어요: ' + err.message));
@@ -980,7 +924,7 @@ function startApp(fbConfig) {
 
   async function logActivity(type, action, docId, summary) {
     try {
-      await db.collection('activityLog').add({
+      await db.collection('b2bActivityLog').add({
         type, action, docId, summary,
         byEmail: auth.currentUser.email,
         at: firebase.firestore.FieldValue.serverTimestamp()
@@ -1039,7 +983,7 @@ function startApp(fbConfig) {
   document.getElementById('addPartnerBtn').addEventListener('click', async () => {
     const name = document.getElementById('partnerNameInput').value.trim();
     if (!name) { showToast('거래처명을 입력해주세요.'); return; }
-    await db.collection('partners').add({
+    await db.collection('b2bPartners').add({
       name,
       bizNo: document.getElementById('partnerBizNoInput').value.trim(),
       ceo: document.getElementById('partnerCeoInput').value.trim(),
@@ -1071,7 +1015,7 @@ function startApp(fbConfig) {
     const receiverPhone = ask('받는사람 번호', p.receiverPhone); if (receiverPhone === null) return;
     const shipAddress = ask('비고', p.shipAddress); if (shipAddress === null) return;
     const after = { name: name.trim() || p.name, bizNo, ceo, address, contact, shipTo, receiver, receiverPhone, shipAddress };
-    await db.collection('partners').doc(id).update(after);
+    await db.collection('b2bPartners').doc(id).update(after);
     const summary = diffSummary(
       { name: '거래처명', bizNo: '등록번호', ceo: '대표자', address: '주소', contact: '검수자', shipTo: '받는사람', receiver: '받는사람 주소', receiverPhone: '받는사람 번호', shipAddress: '비고' },
       p, after
@@ -1084,7 +1028,7 @@ function startApp(fbConfig) {
     if (!currentUserIsAdmin) { showToast('삭제는 관리자만 할 수 있어요.'); return; }
     const name = partnerName(id);
     if (!confirm('"' + name + '" 거래처를 삭제할까요? (이미 등록된 출고 내역은 그대로 남아요)')) return;
-    await db.collection('partners').doc(id).delete();
+    await db.collection('b2bPartners').doc(id).delete();
     logActivity('partner', 'delete', id, name + ' 거래처 삭제');
     showToast('"' + name + '" 거래처를 삭제했어요.');
   }
@@ -1095,7 +1039,7 @@ function startApp(fbConfig) {
   document.getElementById('addWarehouseBtn').addEventListener('click', async () => {
     const name = document.getElementById('warehouseNameInput').value.trim();
     if (!name) { showToast('창고명을 입력해주세요.'); return; }
-    await db.collection('warehouses').add({ name, order: nextOrder(warehouses), createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+    await db.collection('b2bWarehouses').add({ name, order: nextOrder(warehouses), createdAt: firebase.firestore.FieldValue.serverTimestamp() });
     logActivity('warehouse', 'create', null, name + ' 창고 등록');
     document.getElementById('warehouseNameInput').value = '';
     showToast('"' + name + '" 창고를 등록했어요.');
@@ -1106,7 +1050,7 @@ function startApp(fbConfig) {
     if (!w) return;
     const name = prompt('창고명', w.name);
     if (name === null || !name.trim()) return;
-    await db.collection('warehouses').doc(id).update({ name: name.trim() });
+    await db.collection('b2bWarehouses').doc(id).update({ name: name.trim() });
     logActivity('warehouse', 'update', id, w.name + ' → ' + name.trim());
     showToast('창고명을 수정했어요.');
   }
@@ -1115,7 +1059,7 @@ function startApp(fbConfig) {
     if (!currentUserIsAdmin) { showToast('삭제는 관리자만 할 수 있어요.'); return; }
     const name = warehouseName(id);
     if (!confirm('"' + name + '" 창고를 삭제할까요? (이미 등록된 출고 내역은 그대로 남아요)')) return;
-    await db.collection('warehouses').doc(id).delete();
+    await db.collection('b2bWarehouses').doc(id).delete();
     logActivity('warehouse', 'delete', id, name + ' 창고 삭제');
     showToast('"' + name + '" 창고를 삭제했어요.');
   }
@@ -1193,7 +1137,7 @@ function startApp(fbConfig) {
 
   /* ============ 미결 현황 (창고 자체 매트릭스) ============ */
   function whSaveData() {
-    db.collection('warehouseInventory').doc('data').set(whData).catch(err => showToast('저장에 실패했어요: ' + err.message));
+    db.collection('b2bInventory').doc('data').set(whData).catch(err => showToast('저장에 실패했어요: ' + err.message));
   }
   function whAllStores() {
     const set = new Set(whData.storeOrder || []);
@@ -1403,7 +1347,7 @@ function startApp(fbConfig) {
   document.getElementById('addProductMasterBtn').addEventListener('click', async () => {
     const f = readProductFormFields();
     if (!f.name) { showToast('품목명을 입력해주세요.'); return; }
-    await db.collection('products').add({
+    await db.collection('b2bProducts').add({
       ...f, defaultPrice: f.distributorPrice || f.consumerPrice || 0,
       order: nextOrder(productMaster),
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -1434,7 +1378,7 @@ function startApp(fbConfig) {
       specialDistributorPrice: parseMoneyInputValue(specialDistributorPrice)
     };
     after.defaultPrice = after.distributorPrice || after.consumerPrice || 0;
-    await db.collection('products').doc(id).update(after);
+    await db.collection('b2bProducts').doc(id).update(after);
     const summary = diffSummary(
       { name: '품목명', spec: '규격', barcode: '바코드', unitsPerBox: '박스입수량', consumerPrice: '소비자가', memberPrice: '조합원가', distributorPrice: '대리점가', specialDistributorPrice: '특판대리점가' },
       p, after
@@ -1447,7 +1391,7 @@ function startApp(fbConfig) {
     if (!currentUserIsAdmin) { showToast('삭제는 관리자만 할 수 있어요.'); return; }
     const p = productMaster.find(p => p.id === id);
     if (!confirm('"' + (p ? p.name : '') + '" 품목을 삭제할까요?')) return;
-    await db.collection('products').doc(id).delete();
+    await db.collection('b2bProducts').doc(id).delete();
     logActivity('product', 'delete', id, (p ? p.name : '') + ' 품목 삭제');
     showToast('품목을 삭제했어요.');
   }
@@ -1578,7 +1522,7 @@ function startApp(fbConfig) {
     for (let i = 0; i < productExcelRows.length; i += batchSize) {
       const batch = db.batch();
       productExcelRows.slice(i, i + batchSize).forEach(r => {
-        const ref = db.collection('products').doc();
+        const ref = db.collection('b2bProducts').doc();
         batch.set(ref, {
           ...r, defaultPrice: r.distributorPrice || r.consumerPrice || 0,
           order: order++, createdAt: firebase.firestore.FieldValue.serverTimestamp()
@@ -1977,7 +1921,7 @@ function startApp(fbConfig) {
 
     if (editingOutboundId) {
       const before = outboundList.find(o => o.id === editingOutboundId);
-      await db.collection('outbound').doc(editingOutboundId).update({
+      await db.collection('b2bOutbound').doc(editingOutboundId).update({
         ...order, editedAt: firebase.firestore.FieldValue.serverTimestamp(), editedBy: auth.currentUser.email
       });
       const summary = diffSummary(
@@ -1998,7 +1942,7 @@ function startApp(fbConfig) {
       order.status = 'pending';
       order.createdAt = firebase.firestore.FieldValue.serverTimestamp();
       order.createdBy = auth.currentUser.email;
-      const docRef = await db.collection('outbound').add(order);
+      const docRef = await db.collection('b2bOutbound').add(order);
       logActivity('outbound', 'create', docRef.id, partnerInfo.partnerName + ' 앞 · 품목 ' + order.items.length + '개 · 총액 ' + fmtMoney(order.total) + '원');
       // 출고 등록 자체는 미결에 안 쌓여요. 창고이동 완료 눌러야(=내부망에 실제로 반영했다는 뜻) 미결이 생겨요.
       lastRegisteredOrder = { id: docRef.id, ...order, createdAt: new Date() };
@@ -2019,7 +1963,7 @@ function startApp(fbConfig) {
 
       if (isManual) {
         if (confirm('"' + partnerInfo.partnerName + '"을(를) 거래처로 등록해두시겠어요?\n등록해두면 다음에 또 거래할 때 목록에서 바로 고를 수 있어요.')) {
-          await db.collection('partners').add({
+          await db.collection('b2bPartners').add({
             name: partnerInfo.partnerName,
             bizNo: partnerInfo.partnerBizNo,
             ceo: partnerInfo.partnerCeo,
@@ -2047,7 +1991,7 @@ function startApp(fbConfig) {
     const warehouseId = select ? select.value : '';
     if (!warehouseId) { showToast('이동할 창고를 먼저 선택해주세요.'); return; }
     const whName = warehouseName(warehouseId);
-    await db.collection('outbound').doc(id).update({
+    await db.collection('b2bOutbound').doc(id).update({
       status: 'done', warehouseId, warehouseName: whName,
       completedAt: firebase.firestore.FieldValue.serverTimestamp(), completedBy: auth.currentUser.email
     });
@@ -2061,7 +2005,7 @@ function startApp(fbConfig) {
     if (!currentUserIsAdmin) { showToast('삭제는 관리자만 할 수 있어요.'); return; }
     const o = outboundList.find(x => x.id === id);
     if (!confirm('이 출고 건을 완전히 삭제할까요?\n\n' + (o ? o.partnerName + ' · ' + fmtDateOnly(o.createdAt) : '') + '\n삭제하면 되돌릴 수 없어요.')) return;
-    await db.collection('outbound').doc(id).delete();
+    await db.collection('b2bOutbound').doc(id).delete();
     logActivity('outbound', 'delete', id, (o ? o.partnerName + ' · 총액 ' + fmtMoney(o.total) + '원' : ''));
     if (o && o.status === 'done') whAdjustForOrder(o.partnerName, o.items, -1); // 미결에 반영돼 있던 거면 빼줘요
     showToast('출고 건을 삭제했어요.');
@@ -2069,7 +2013,7 @@ function startApp(fbConfig) {
 
   async function unmarkTransferDone(id) {
     if (!confirm('이 건을 다시 "창고이동 대기중"으로 되돌릴까요?')) return;
-    await db.collection('outbound').doc(id).update({
+    await db.collection('b2bOutbound').doc(id).update({
       status: 'pending', completedAt: firebase.firestore.FieldValue.delete(), completedBy: firebase.firestore.FieldValue.delete()
     });
     const o = outboundList.find(x => x.id === id);
@@ -2360,7 +2304,7 @@ function startApp(fbConfig) {
       try {
         for (const id of ids) {
           const o = outboundList.find(x => x.id === id);
-          await db.collection('outbound').doc(id).delete();
+          await db.collection('b2bOutbound').doc(id).delete();
           logActivity('outbound', 'delete', id, (o ? o.partnerName + ' · 총액 ' + fmtMoney(o.total) + '원' : '') + ' (여러 건 삭제)');
           if (o && o.status === 'done') whAdjustForOrder(o.partnerName, o.items, -1);
         }
@@ -2445,7 +2389,7 @@ function startApp(fbConfig) {
         const whName = warehouseName(warehouseId);
         if (!confirm('"' + g.partnerName + '" 앞으로 가는 대기 중인 출고를 전부 "' + whName + '" 창고로 이동 완료 처리할까요?')) return;
         for (const id of g.orderIds) {
-          await db.collection('outbound').doc(id).update({
+          await db.collection('b2bOutbound').doc(id).update({
             status: 'done', warehouseId, warehouseName: whName,
             completedAt: firebase.firestore.FieldValue.serverTimestamp(), completedBy: auth.currentUser.email
           });
@@ -2477,6 +2421,40 @@ function startApp(fbConfig) {
     area.querySelectorAll('[data-edit-partner]').forEach(btn => btn.addEventListener('click', () => editPartner(btn.dataset.editPartner)));
     area.querySelectorAll('[data-remove-partner]').forEach(btn => btn.addEventListener('click', () => removePartner(btn.dataset.removePartner)));
   }
+
+  // 창고관리(index.html)에 이미 등록된 품목들을 한 번에 B2B 쪽으로 복사해와요. (거래처는 안 가져와요, 품목만요)
+  document.getElementById('importProductsFromWarehouseBtn').addEventListener('click', async () => {
+    if (!currentUserIsAdmin) return;
+    if (!confirm('창고관리에 등록된 품목들을 B2B 쪽으로 복사해올까요?\n이미 B2B에 있는 품목명이랑 겹치면 새로 하나 더 생길 수 있으니, 처음 한 번만 눌러주세요.')) return;
+    try {
+      const snap = await db.collection('products').get();
+      if (snap.empty) { showToast('창고관리 쪽에 가져올 품목이 없어요.'); return; }
+      let count = 0;
+      const batchSize = 400;
+      let batch = db.batch();
+      let opsInBatch = 0;
+      for (const doc of snap.docs) {
+        const p = doc.data();
+        const ref = db.collection('b2bProducts').doc();
+        batch.set(ref, {
+          name: p.name, spec: p.spec || '', barcode: p.barcode || '',
+          unitsPerBox: p.unitsPerBox || 0,
+          consumerPrice: p.consumerPrice || 0, memberPrice: p.memberPrice || 0,
+          distributorPrice: p.distributorPrice || 0, specialDistributorPrice: p.specialDistributorPrice || 0,
+          defaultPrice: p.defaultPrice || 0,
+          order: nextOrder(productMaster) + count,
+          createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        });
+        count++; opsInBatch++;
+        if (opsInBatch >= batchSize) { await batch.commit(); batch = db.batch(); opsInBatch = 0; }
+      }
+      if (opsInBatch > 0) await batch.commit();
+      logActivity('product', 'create', null, '창고관리에서 품목 ' + count + '개 가져옴');
+      showToast(count + '개 품목을 가져왔어요.');
+    } catch (e) {
+      showToast('가져오기에 실패했어요: ' + e.message);
+    }
+  });
 
   function renderProductList() {
     const area = document.getElementById('productListArea');
@@ -2673,7 +2651,7 @@ function startApp(fbConfig) {
     if (!confirm(outboundIds.size + '건을 매출처리 완료로 표시할까요? 표시하면 미결 현황에서 사라져요.')) return;
     for (const id of outboundIds) {
       const o = outboundList.find(x => x.id === id);
-      await db.collection('outbound').doc(id).update({
+      await db.collection('b2bOutbound').doc(id).update({
         salesProcessed: true, salesProcessedAt: firebase.firestore.FieldValue.serverTimestamp(), salesProcessedBy: auth.currentUser.email
       });
       if (o) whAdjustForOrder(o.partnerName, o.items, -1);
@@ -2687,7 +2665,7 @@ function startApp(fbConfig) {
   async function markSalesProcessed(outboundId) {
     if (!confirm('이 출고 건을 매출처리 완료로 표시할까요? 표시하면 미결 현황에서 사라져요.')) return;
     const o = outboundList.find(x => x.id === outboundId);
-    await db.collection('outbound').doc(outboundId).update({
+    await db.collection('b2bOutbound').doc(outboundId).update({
       salesProcessed: true, salesProcessedAt: firebase.firestore.FieldValue.serverTimestamp(), salesProcessedBy: auth.currentUser.email
     });
     if (o) whAdjustForOrder(o.partnerName, o.items, -1); // 매출처리까지 끝났으니 미결에서도 빠져요
@@ -2712,7 +2690,7 @@ function startApp(fbConfig) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = '창고관리_백업_' + fmtDateOnly(new Date()) + '.json';
+    a.download = 'B2B관리_백업_' + fmtDateOnly(new Date()) + '.json';
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 5000);
     showToast('데이터를 백업 파일로 다운로드했어요.');

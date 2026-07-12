@@ -218,6 +218,7 @@
     <div></div>
     <div style="display:flex; align-items:center; gap:10px; font-size:12px; color:var(--ink-soft);">
       <a href="./index.html" id="goWarehouseLink" class="ghost-btn" style="text-decoration:none; display:none;">🚚 창고 관리로 이동</a>
+      <a href="./b2b.html" id="goB2BLink" class="ghost-btn" style="text-decoration:none; display:none;">🏢 B2B 관리로 이동</a>
       <span id="currentUserEmailOnline"></span>
       <button class="ghost-btn" id="onlineLogoutBtn">로그아웃</button>
     </div>
@@ -241,7 +242,7 @@
   <div class="logic-note" style="margin-top:6px;">총 재고 = 아직 정산되지 않은 미결 수량 누적치입니다. 스토어(채널)별로 따로 쌓이기 때문에, 어느 사이트에서 문제가 생겼는지 바로 확인할 수 있어요.</div>
 
   <div class="tab-nav" id="tabNav">
-    <button class="tab-btn active" data-tab="stock">현재 총 재고</button>
+    <button class="tab-btn active" data-tab="stock">미결 현황</button>
     <button class="tab-btn" data-tab="upload">판매내역 업로드</button>
     <button class="tab-btn" data-tab="mapping">상품명 매핑</button>
     <button class="tab-btn" data-tab="settle">매출처리</button>
@@ -252,7 +253,7 @@
 
   <div class="tab-panel" data-panel="stock">
     <div class="section-head">
-      <div><h2>현재 총 재고 (미결) - 스토어별</h2><div class="desc">상품별 · 스토어별 누적 미결 수량</div></div>
+      <div><h2>미결 현황 - 스토어별</h2><div class="desc">상품별 · 스토어별 누적 미결 수량</div></div>
     </div>
     <div class="add-row" style="margin-top:0; margin-bottom: 12px;">
       <input type="text" id="stockSearchInput" placeholder="상품명으로 검색 (예: 침향원)">
@@ -513,15 +514,18 @@ auth.onAuthStateChanged(user => {
     document.getElementById('loginGate').style.display = 'flex';
     return;
   }
-  if (isAdminEmail(user.email)) { enterOnlineApp(user, true); return; }
+  if (isAdminEmail(user.email)) { enterOnlineApp(user, true, true); return; }
   unsubscribeOwnProfileOnline = db.collection('users').doc(user.uid).onSnapshot(doc => {
     const approved = doc.exists && doc.data().approved === true;
     const hasOnline = doc.exists && doc.data().onlineAccess === true;
     const hasWarehouse = doc.exists && doc.data().warehouseAccess === true;
+    const hasB2B = doc.exists && doc.data().b2bAccess === true;
     if (approved && hasOnline) {
-      enterOnlineApp(user, hasWarehouse);
+      enterOnlineApp(user, hasWarehouse, hasB2B);
     } else if (approved && hasWarehouse) {
       window.location.href = './index.html'; // 온라인 권한은 없고 창고 관리 권한만 있으면 그쪽으로 이동
+    } else if (approved && hasB2B) {
+      window.location.href = './b2b.html'; // 온라인 권한은 없고 B2B 권한만 있으면 그쪽으로 이동
     } else if (approved) {
       document.getElementById('appWrap').style.display = 'none';
       document.getElementById('loginGate').style.display = 'none';
@@ -541,7 +545,7 @@ auth.onAuthStateChanged(user => {
     document.getElementById('pendingUserEmail').textContent = user.email;
   });
 });
-function enterOnlineApp(user, hasWarehouseAccess) {
+function enterOnlineApp(user, hasWarehouseAccess, hasB2BAccess) {
   document.getElementById('pendingGate').style.display = 'none';
   document.getElementById('loginGate').style.display = 'none';
   document.getElementById('appWrap').style.display = '';
@@ -549,6 +553,7 @@ function enterOnlineApp(user, hasWarehouseAccess) {
   document.getElementById('currentUserEmailOnline').textContent = user.email + (currentUserIsAdmin ? ' (관리자)' : '');
   document.getElementById('adminActionBar').style.display = currentUserIsAdmin ? 'flex' : 'none';
   document.getElementById('goWarehouseLink').style.display = (currentUserIsAdmin || hasWarehouseAccess) ? '' : 'none';
+  document.getElementById('goB2BLink').style.display = (currentUserIsAdmin || hasB2BAccess) ? '' : 'none';
   startFirestoreSync();
 }
 
@@ -882,10 +887,12 @@ function renderStockTable() {
   const names = stockSearchTerm ? allNames.filter(n => n.toLowerCase().includes(stockSearchTerm)) : allNames;
   if (allNames.length === 0) {
     area.innerHTML = '<div class="empty">아직 등록된 상품이 없어요. 상품을 직접 추가하거나, 아래에서 판매 엑셀을 업로드해 시작해보세요.</div>';
+    updateDeleteBar();
     return;
   }
   if (names.length === 0) {
     area.innerHTML = '<div class="empty">"' + escapeHtml(stockSearchTerm) + '"에 해당하는 상품이 없어요.</div>';
+    updateDeleteBar();
     return;
   }
   const reorderLocked = !!stockSearchTerm;
@@ -1024,7 +1031,7 @@ function renderSettleRows() {
   const area = document.getElementById('settleRowsArea');
   const names = Object.keys(data.products);
   if (names.length === 0) {
-    area.innerHTML = '<div class="empty">등록된 상품이 없어요. 먼저 "현재 총 재고" 탭에서 상품을 추가해주세요.</div>';
+    area.innerHTML = '<div class="empty">등록된 상품이 없어요. 먼저 "미결 현황" 탭에서 상품을 추가해주세요.</div>';
     return;
   }
   area.innerHTML = settleRows.map(row => {
@@ -1440,7 +1447,7 @@ function renderAsOfResult(dateStr) {
     area.innerHTML = '<div class="empty">이 날짜 기준으로 조회할 상품이 없어요.</div>';
     return;
   }
-  // "현재 총 재고" 탭과 같은 순서(orderedProductNames)를 그대로 따르도록 정렬해요.
+  // "미결 현황" 탭과 같은 순서(orderedProductNames)를 그대로 따르도록 정렬해요.
   const nameSet = new Set(snapshotNames);
   const orderedNames = orderedProductNames().filter(n => nameSet.has(n));
   const extraNames = snapshotNames.filter(n => orderedNames.indexOf(n) === -1);
@@ -1449,12 +1456,12 @@ function renderAsOfResult(dateStr) {
   const storeSet = new Set();
   names.forEach(n => Object.keys(snapshot[n]).forEach(s => storeSet.add(s)));
   allStores().forEach(s => storeSet.add(s));
-  // 스토어(채널) 순서도 "현재 총 재고" 탭에서 쓰는 순서(allStores)와 맞춰요.
+  // 스토어(채널) 순서도 "미결 현황" 탭에서 쓰는 순서(allStores)와 맞춰요.
   const orderedStores = allStores().filter(s => storeSet.has(s));
   const extraStores = [...storeSet].filter(s => orderedStores.indexOf(s) === -1);
   const stores = orderedStores.concat(extraStores);
 
-  let html = '<div style="font-size:12px; color: var(--ink-soft); margin-bottom:8px;">' + escapeHtml(dateStr) + ' 영업 종료 시점 기준 재고 (\'현재 총 재고\' 탭과 같은 순서예요)</div>';
+  let html = '<div style="font-size:12px; color: var(--ink-soft); margin-bottom:8px;">' + escapeHtml(dateStr) + ' 영업 종료 시점 기준 재고 (\'미결 현황\' 탭과 같은 순서예요)</div>';
   html += '<table><thead><tr><th>상품명</th><th class="num">합계</th>';
   stores.forEach(s => { html += '<th class="num">' + escapeHtml(s) + '</th>'; });
   html += '</tr></thead><tbody>';
