@@ -207,6 +207,7 @@
     </div>
     <div class="user-chip">
       <a href="./online.html" id="goOnlineLink" class="ghost-btn" style="text-decoration:none; display:none;">📦 온라인 관리로 이동</a>
+      <button id="dataBackupBtn" class="ghost-btn" style="display:none;">💾 데이터 백업</button>
       <span id="currentUserEmail"></span>
       <button class="ghost-btn" id="logoutBtn">로그아웃</button>
     </div>
@@ -736,6 +737,7 @@ function startApp(fbConfig) {
     document.getElementById('loginGate').style.display = 'none';
     document.getElementById('noAccessGate').style.display = 'none';
     document.getElementById('goOnlineLink').style.display = (admin || hasOnlineAccess) ? '' : 'none';
+    document.getElementById('dataBackupBtn').style.display = admin ? '' : 'none';
     if (skipHub) {
       document.getElementById('hubGate').style.display = 'none';
       document.getElementById('appWrap').style.display = '';
@@ -1768,6 +1770,24 @@ function startApp(fbConfig) {
     document.getElementById('cartTotalsArea').innerHTML =
       '총액 ' + fmtMoney(totals.total) + '원 <span style="color:var(--ink-soft);">(공급가액 ' + fmtMoney(totals.subtotal) + '원 · 부가세 ' + fmtMoney(totals.vat) + '원)</span>';
   }
+  // 이 거래처한테 이 품목을 평소 몇 개씩 보냈는지 보고, 이번 수량이 30개 이상 차이나면 경고 목록에 담아요.
+  // (과거 기록이 2건 미만이면 비교할 게 없으니 건너뛰어요. 수정 중인 건 자기 자신은 빼고 비교해요.)
+  function findQtyAnomalies(partnerName, items) {
+    const warnings = [];
+    items.forEach(item => {
+      const past = [];
+      outboundList.forEach(o => {
+        if (o.id === editingOutboundId) return;
+        if (o.partnerName !== partnerName) return;
+        (o.items || []).forEach(it => { if (it.name === item.name) past.push(it.qty); });
+      });
+      if (past.length < 2) return;
+      const avg = Math.round(past.reduce((a, b) => a + b, 0) / past.length);
+      if (Math.abs(item.qty - avg) >= 30) warnings.push({ name: item.name, qty: item.qty, avg });
+    });
+    return warnings;
+  }
+
   function computeTotals(items) {
     const total = items.reduce((s, it) => s + (it.price||0) * (it.qty||0), 0);
     const subtotal = Math.round(total / 1.1);
@@ -1909,6 +1929,14 @@ function startApp(fbConfig) {
     }
     if (!cartItems.length) { showToast('담긴 품목이 없어요.'); return; }
     if (cartItems.some(it => !it.qty || it.qty <= 0)) { showToast('수량은 1 이상이어야 해요.'); return; }
+
+    const anomalies = findQtyAnomalies(partnerInfo.partnerName, cartItems);
+    if (anomalies.length) {
+      const msg = '평소랑 수량 차이가 많이 나는 품목이 있어요:\n\n' +
+        anomalies.map(a => '· ' + a.name + ': 이번 ' + a.qty + '개 (평소 평균 ' + a.avg + '개)').join('\n') +
+        '\n\n오타가 아니면 확인 눌러서 그대로 등록해주세요.';
+      if (!confirm(msg)) return;
+    }
 
     const totals = computeTotals(cartItems);
     const order = {
@@ -2634,6 +2662,27 @@ function startApp(fbConfig) {
   }
   ['ledgerFilterFrom','ledgerFilterTo','ledgerFilterPartner','ledgerFilterProduct'].forEach(id => {
     document.getElementById(id).addEventListener('input', renderLedger);
+  });
+
+  document.getElementById('dataBackupBtn').addEventListener('click', () => {
+    if (!currentUserIsAdmin) return;
+    const backup = {
+      exportedAt: new Date().toISOString(),
+      outbound: outboundList,
+      partners: partners,
+      products: productMaster,
+      warehouses: warehouses,
+      company: company,
+      warehouseInventory: whData
+    };
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '창고관리_백업_' + fmtDateOnly(new Date()) + '.json';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    showToast('데이터를 백업 파일로 다운로드했어요.');
   });
 
   function renderAll() {
