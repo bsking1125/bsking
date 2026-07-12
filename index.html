@@ -75,8 +75,8 @@
   .badge-out { background: var(--red-tint); color: var(--red); }
   .badge-move { background: var(--amber-tint); color: var(--amber); }
   .row-actions { text-align: center; }
-  .row-actions button { display:inline-flex; align-items:center; height:26px; box-sizing:border-box; background: none; border: none; color: var(--ink-soft); font-size: 13px; font-family: inherit; cursor: pointer; padding: 0 4px; }
-  .wh-pick-select { height:26px; box-sizing:border-box; font-size:13px; padding:0 6px; max-width:110px; }
+  .row-actions button { background: none; border: none; color: var(--ink-soft); font-size: 13px; font-family: inherit; cursor: pointer; padding: 0 4px; }
+  .wh-pick-select { appearance:none; -webkit-appearance:none; background:none; border:none; padding:0; margin:0; font:inherit; font-size:13px; color:var(--ink); cursor:pointer; font-weight:600; }
   .row-actions button:hover { color: var(--red); }
   .arrow-btn { cursor: pointer; color: var(--ink-soft); font-size: 9px; padding: 1px; border-radius: 4px; opacity: 0; width: 0; overflow: hidden; display: inline-block; transition: opacity .12s ease, width .12s ease; }
   .arrow-btn:hover { background: var(--primary-tint); color: var(--primary-dark); }
@@ -305,11 +305,13 @@
       </div>
 
       <div class="add-row">
-        <div class="field" style="flex:1; min-width:160px;"><label>배송처</label><input type="text" id="regShipToInput"></div>
-        <div class="field" style="flex:1; min-width:160px;"><label>입고담당자</label><input type="text" id="regReceiverInput"></div>
-        <div class="field" style="flex:1; min-width:160px;"><label>입고담당자 연락처</label><input type="text" id="regReceiverPhoneInput"></div>
+        <div class="field" style="flex:1; min-width:160px;"><label>받는사람</label><input type="text" id="regShipToInput"></div>
+        <div class="field" style="flex:1; min-width:160px;"><label>받는사람 번호</label><input type="text" id="regReceiverPhoneInput"></div>
       </div>
-      <div class="field"><label>배송지 주소</label><input type="text" id="regShipAddressInput"></div>
+      <div class="add-row">
+        <div class="field" style="flex:1; min-width:160px;"><label>받는사람 주소</label><input type="text" id="regReceiverInput"></div>
+        <div class="field" style="flex:1; min-width:160px;"><label>비고</label><input type="text" id="regShipAddressInput"></div>
+      </div>
     </div>
 
     <div class="section-head"><div><h2 style="font-size:14px;">품목 담기</h2><div class="desc">품목명이나 바코드 일부를 입력하면 검색돼요. 없는 품목이면 "품목 관리" 탭에서 먼저 등록해주세요.</div></div></div>
@@ -346,6 +348,18 @@
     <div class="section-head">
       <div><h2>출고 내역</h2><div class="desc">날짜 · 거래처 · 상태로 필터해서 볼 수 있어요.</div></div>
       <button class="ghost-btn" id="openTransferSummaryBtn">창고이동 정리 보기</button>
+    </div>
+    <div id="outboundBulkEntryBar" style="display:flex; align-items:center; gap:8px; margin-bottom:12px; flex-wrap:wrap;">
+      <button class="ghost-btn" id="bulkPrintInvoiceBtn">거래명세표 출력</button>
+      <button class="ghost-btn" id="bulkShippingExcelBtn">송장 출력</button>
+      <button class="ghost-btn" id="bulkExcelInvoiceBtn">엑셀 전환</button>
+      <button class="ghost-btn" id="bulkEditEntryBtn">수정</button>
+      <button class="ghost-btn" id="bulkDeleteEntryBtn" style="color:var(--red); border-color:var(--red);">삭제</button>
+    </div>
+    <div id="outboundBulkBar" style="display:none; align-items:center; gap:10px; margin-bottom:12px; flex-wrap:wrap; background:var(--bg); border-radius:8px; padding:10px 12px;">
+      <span id="outboundSelectedCount" style="font-size:13px; font-weight:600;"></span>
+      <button class="primary-btn" id="bulkConfirmBtn">선택한 건 실행</button>
+      <button class="ghost-btn" id="bulkClearSelectionBtn">취소</button>
     </div>
     <div class="filter-grid" style="margin-bottom:14px;">
       <div class="field"><label>시작일</label><input type="date" id="outFilterFrom"></div>
@@ -464,11 +478,13 @@
         <div class="field" style="flex:1; min-width:140px;"><label>검수자</label><input type="text" id="partnerContactInput"></div>
       </div>
       <div class="add-row">
-        <div class="field" style="flex:1; min-width:160px;"><label>배송처</label><input type="text" id="partnerShipToInput"></div>
-        <div class="field" style="flex:1; min-width:140px;"><label>입고담당자</label><input type="text" id="partnerReceiverInput"></div>
-        <div class="field" style="flex:1; min-width:140px;"><label>입고담당자 연락처</label><input type="text" id="partnerReceiverPhoneInput"></div>
+        <div class="field" style="flex:1; min-width:160px;"><label>받는사람</label><input type="text" id="partnerShipToInput"></div>
+        <div class="field" style="flex:1; min-width:140px;"><label>받는사람 번호</label><input type="text" id="partnerReceiverPhoneInput"></div>
       </div>
-      <div class="field"><label>배송지 주소</label><input type="text" id="partnerShipAddressInput"></div>
+      <div class="add-row">
+        <div class="field" style="flex:1; min-width:160px;"><label>받는사람 주소</label><input type="text" id="partnerReceiverInput"></div>
+      </div>
+      <div class="field"><label>비고</label><input type="text" id="partnerShipAddressInput"></div>
       <div class="desc" style="margin-bottom:8px;">* 입력하지 않은 내용은 거래명세표에 빈칸으로 기입됩니다.</div>
       <button class="primary-btn" id="addPartnerBtn">거래처 추가</button>
     </div>
@@ -1001,14 +1017,14 @@ function startApp(fbConfig) {
     const ceo = ask('대표자', p.ceo); if (ceo === null) return;
     const address = ask('주소', p.address); if (address === null) return;
     const contact = ask('검수자', p.contact); if (contact === null) return;
-    const shipTo = ask('배송처', p.shipTo); if (shipTo === null) return;
-    const receiver = ask('입고담당자', p.receiver); if (receiver === null) return;
-    const receiverPhone = ask('입고담당자 연락처', p.receiverPhone); if (receiverPhone === null) return;
-    const shipAddress = ask('배송지 주소', p.shipAddress); if (shipAddress === null) return;
+    const shipTo = ask('받는사람', p.shipTo); if (shipTo === null) return;
+    const receiver = ask('받는사람 주소', p.receiver); if (receiver === null) return;
+    const receiverPhone = ask('받는사람 번호', p.receiverPhone); if (receiverPhone === null) return;
+    const shipAddress = ask('비고', p.shipAddress); if (shipAddress === null) return;
     const after = { name: name.trim() || p.name, bizNo, ceo, address, contact, shipTo, receiver, receiverPhone, shipAddress };
     await db.collection('partners').doc(id).update(after);
     const summary = diffSummary(
-      { name: '거래처명', bizNo: '등록번호', ceo: '대표자', address: '주소', contact: '검수자', shipTo: '배송처', receiver: '입고담당자', receiverPhone: '연락처', shipAddress: '배송지주소' },
+      { name: '거래처명', bizNo: '등록번호', ceo: '대표자', address: '주소', contact: '검수자', shipTo: '받는사람', receiver: '받는사람 주소', receiverPhone: '받는사람 번호', shipAddress: '비고' },
       p, after
     );
     logActivity('partner', 'update', id, summary);
@@ -1707,6 +1723,8 @@ function startApp(fbConfig) {
   }
 
   let editingOutboundId = null;
+  let outboundSelectedIds = new Set();
+  let outboundBulkMode = null; // null | 'print' | 'excel' | 'delete'
   let lastRegisteredOrder = null;
 
   function resetRegisterForm() {
@@ -1794,7 +1812,7 @@ function startApp(fbConfig) {
         ...order, editedAt: firebase.firestore.FieldValue.serverTimestamp(), editedBy: auth.currentUser.email
       });
       const summary = diffSummary(
-        { partnerName: '거래처', shipTo: '배송처', shipAddress: '배송지주소', total: '총액' },
+        { partnerName: '거래처', shipTo: '받는사람', shipAddress: '비고', total: '총액' },
         before ? { ...before, total: fmtMoney(before.total) } : null,
         { ...order, total: fmtMoney(order.total) }
       ) + ' (품목 ' + (before ? (before.items||[]).length : '?') + '개 → ' + order.items.length + '개)';
@@ -1893,8 +1911,7 @@ function startApp(fbConfig) {
 
   /* ============ 거래명세표 ============ */
   const MIN_INVOICE_ROWS = 20; // 원본 양식처럼 빈 줄도 넉넉하게 채워서 보여줘요 (엑셀 실제 파일은 15줄까지만 들어가요)
-  function showInvoice(order) {
-    lastShownOrder = order;
+  function buildInvoiceSheetHtml(order) {
     const c = company || {};
     const rows = Math.max(MIN_INVOICE_ROWS, (order.items || []).length);
     let itemsHtml = '';
@@ -1946,13 +1963,17 @@ function startApp(fbConfig) {
       '<tr><td class="label" style="width:70px;">공급가액</td><td class="num">' + fmtMoney(order.subtotal) + '원</td>' +
            '<td class="label" style="width:60px;">부가세</td><td class="num">' + fmtMoney(order.vat) + '원</td>' +
            '<td class="label" style="width:70px;">총공급액</td><td class="num" style="font-weight:700;" colspan="2">' + fmtMoney(order.total) + '원</td></tr>' +
-      '<tr><td class="label">배송처</td><td colspan="3">' + escapeHtml(order.shipTo||'-') + '</td>' +
-           '<td class="label">입고담당자</td><td colspan="2">' + escapeHtml(order.receiver||'-') + (order.receiverPhone ? ' · ' + escapeHtml(order.receiverPhone) : '') + '</td></tr>' +
-      '<tr><td class="label">배송지주소</td><td colspan="7">' + escapeHtml(order.shipAddress||'-') + '</td></tr>' +
+      '<tr><td class="label">받는사람</td><td colspan="3">' + escapeHtml(order.shipTo||'-') + '</td>' +
+           '<td class="label">받는사람 주소</td><td colspan="2">' + escapeHtml(order.receiver||'-') + (order.receiverPhone ? ' · ' + escapeHtml(order.receiverPhone) : '') + '</td></tr>' +
+      '<tr><td class="label">비고</td><td colspan="7">' + escapeHtml(order.shipAddress||'-') + '</td></tr>' +
       (c.bankInfo ? '<tr><td class="label">비고</td><td colspan="7">' + escapeHtml(c.bankInfo) + '</td></tr>' : '') +
       '</table>' +
       '</div>';
-    document.getElementById('invoiceContent').innerHTML = html;
+    return html;
+  }
+  function showInvoice(order) {
+    lastShownOrder = order;
+    document.getElementById('invoiceContent').innerHTML = buildInvoiceSheetHtml(order);
     document.getElementById('invoiceModal').style.display = 'flex';
   }
 
@@ -1987,40 +2008,32 @@ function startApp(fbConfig) {
     return xml; // 해당 칸을 원본에서 못 찾으면 안전하게 그대로 둬요
   }
 
-  async function exportInvoiceToExcel(order) {
+  async function buildInvoiceExcelBlob(order) {
     const c = company || {};
-    if ((order.items || []).length > INVOICE_MAX_ITEM_ROWS) {
-      showToast('엑셀 양식은 한 장에 품목 ' + INVOICE_MAX_ITEM_ROWS + '개까지만 들어가요. 초과분은 안 채워질 수 있어요.');
-    }
     let resp;
     try {
       resp = await fetch(INVOICE_TEMPLATE_URL);
       if (!resp.ok) throw new Error('template fetch failed');
     } catch (e) {
-      showToast('엑셀 양식 파일(invoice-template.xlsx)을 찾지 못했어요. index.html과 같은 폴더에 올려주세요.');
-      return;
+      throw new Error('엑셀 양식 파일(invoice-template.xlsx)을 찾지 못했어요.');
     }
     const buf = await resp.arrayBuffer();
     const zip = await JSZip.loadAsync(buf);
     const file = zip.file(INVOICE_SHEET_PATH);
-    if (!file) { showToast('양식 파일 구조가 예상과 달라요 (시트 파일을 못 찾았어요).'); return; }
+    if (!file) throw new Error('양식 파일 구조가 예상과 달라요.');
     let xml = await file.async('string');
 
     xml = patchCell(xml, 'A2', fmtDateOnly(order.createdAt), false);
-    // 공급자 (우리 회사) — 값이 비어있으면 "-"로 남겨둬요
     xml = patchCell(xml, 'D5', dash(c.bizNo), false);
     xml = patchCell(xml, 'D6', dash(c.name), false);
     xml = patchCell(xml, 'D7', dash(c.ceo), false);
     xml = patchCell(xml, 'D8', dash(c.address), false);
     xml = patchCell(xml, 'D9', dash(c.phone), false);
-    // 공급받는자 (거래처)
     xml = patchCell(xml, 'J5', dash(order.partnerBizNo), false);
     xml = patchCell(xml, 'J6', dash(order.partnerName), false);
     xml = patchCell(xml, 'J7', dash(order.partnerCeo), false);
     xml = patchCell(xml, 'J8', dash(order.partnerAddress), false);
 
-    // 품목 (13~27행, 최대 15줄) — 합계/공급가액/부가세/총공급액 칸은 원본에 수식이 이미 걸려있어서
-    // 건드리지 않아요. 엑셀에서 파일을 열면 그 수식들이 알아서 자동으로 계산돼요.
     const items = (order.items || []).slice(0, INVOICE_MAX_ITEM_ROWS);
     items.forEach((it, i) => {
       const row = 13 + i;
@@ -2041,9 +2054,19 @@ function startApp(fbConfig) {
     zip.file(INVOICE_SHEET_PATH, xml);
     const outBlob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const fname = ('거래명세표_' + (order.partnerName||'') + '_' + fmtDateOnly(order.createdAt) + '.xlsx').replace(/[\\/:*?"<>|]/g, '');
-    const url = URL.createObjectURL(outBlob);
+    return { blob: outBlob, fname };
+  }
+
+  async function exportInvoiceToExcel(order) {
+    if ((order.items || []).length > INVOICE_MAX_ITEM_ROWS) {
+      showToast('엑셀 양식은 한 장에 품목 ' + INVOICE_MAX_ITEM_ROWS + '개까지만 들어가요. 초과분은 안 채워질 수 있어요.');
+    }
+    let result;
+    try { result = await buildInvoiceExcelBlob(order); }
+    catch (e) { showToast(e.message); return; }
+    const url = URL.createObjectURL(result.blob);
     const a = document.createElement('a');
-    a.href = url; a.download = fname;
+    a.href = url; a.download = result.fname;
     document.body.appendChild(a); a.click(); document.body.removeChild(a);
     setTimeout(() => URL.revokeObjectURL(url), 5000);
   }
@@ -2055,6 +2078,102 @@ function startApp(fbConfig) {
     document.getElementById('invoiceModal').style.display = 'none';
   });
   document.getElementById('invoicePrintBtn').addEventListener('click', () => window.print());
+
+  /* ============ 출고 내역: 체크박스로 여러 건 한 번에 처리 ============ */
+  function updateOutboundBulkBar() {
+    const entryBar = document.getElementById('outboundBulkEntryBar');
+    const confirmBar = document.getElementById('outboundBulkBar');
+    if (!entryBar || !confirmBar) return;
+    if (outboundBulkMode) {
+      entryBar.style.display = 'none';
+      confirmBar.style.display = 'flex';
+      const n = outboundSelectedIds.size;
+      const actionLabel = { print: '거래명세표 출력', shipping: '송장 출력', excel: '엑셀 전환', delete: '삭제', edit: '수정' }[outboundBulkMode];
+      document.getElementById('outboundSelectedCount').textContent = n + '건 선택됨 (' + actionLabel + ')';
+      document.getElementById('bulkConfirmBtn').disabled = n === 0;
+    } else {
+      entryBar.style.display = 'flex';
+      confirmBar.style.display = 'none';
+    }
+    document.getElementById('bulkDeleteEntryBtn').style.display = currentUserIsAdmin ? '' : 'none';
+  }
+  function enterOutboundBulkMode(mode) {
+    outboundBulkMode = mode;
+    outboundSelectedIds.clear();
+    renderOutboundList();
+  }
+  document.getElementById('bulkPrintInvoiceBtn').addEventListener('click', () => enterOutboundBulkMode('print'));
+  document.getElementById('bulkShippingExcelBtn').addEventListener('click', () => enterOutboundBulkMode('shipping'));
+  document.getElementById('bulkExcelInvoiceBtn').addEventListener('click', () => enterOutboundBulkMode('excel'));
+  document.getElementById('bulkEditEntryBtn').addEventListener('click', () => enterOutboundBulkMode('edit'));
+  document.getElementById('bulkDeleteEntryBtn').addEventListener('click', () => enterOutboundBulkMode('delete'));
+  document.getElementById('bulkClearSelectionBtn').addEventListener('click', () => {
+    outboundBulkMode = null;
+    outboundSelectedIds.clear();
+    renderOutboundList();
+  });
+
+  document.getElementById('bulkConfirmBtn').addEventListener('click', async () => {
+    const ids = [...outboundSelectedIds];
+    if (!ids.length) { showToast('먼저 항목을 체크해주세요.'); return; }
+    const orders = ids.map(id => outboundList.find(x => x.id === id)).filter(Boolean);
+
+    if (outboundBulkMode === 'edit') {
+      if (ids.length > 1) { showToast('수정은 한 개만 선택해주세요.'); return; }
+      loadOrderIntoRegisterForm(orders[0]);
+    } else if (outboundBulkMode === 'print') {
+      const html = orders.map((o, i) => {
+        const sheetHtml = buildInvoiceSheetHtml(o);
+        return '<div style="' + (i < orders.length - 1 ? 'page-break-after: always;' : '') + '">' + sheetHtml + '</div>';
+      }).join('');
+      document.getElementById('invoiceContent').innerHTML = html;
+      document.getElementById('invoiceModal').style.display = 'flex';
+      lastShownOrder = orders.length === 1 ? orders[0] : null;
+    } else if (outboundBulkMode === 'shipping') {
+      const c = company || {};
+      const aoa = [['수령인', '받는분전화번호', '받는분주소(전체, 분할)', '품목명', '보내는 사람']];
+      orders.forEach(o => {
+        const itemText = (o.items || []).map(it => it.name + ' ' + it.qty).join(', ');
+        const sender = c.name ? (c.name + (o.shipAddress ? ' ' + o.shipAddress : '')) : (o.shipAddress || '');
+        aoa.push([o.shipTo || '', o.receiverPhone || '', o.receiver || '', itemText, sender]);
+      });
+      const ws = XLSX.utils.aoa_to_sheet(aoa);
+      ws['!cols'] = [{wch:10},{wch:14},{wch:40},{wch:30},{wch:20}];
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 's');
+      XLSX.writeFile(wb, '송장출력_' + fmtDateOnly(new Date()) + '.xlsx');
+      showToast(orders.length + '건 송장 엑셀을 다운로드했어요.');
+    } else if (outboundBulkMode === 'excel') {
+      showToast(orders.length + '건 엑셀로 묶는 중이에요...');
+      const zip = new JSZip();
+      for (const o of orders) {
+        try {
+          const result = await buildInvoiceExcelBlob(o);
+          zip.file(result.fname, result.blob);
+        } catch (e) { showToast(e.message); return; }
+      }
+      const outBlob = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(outBlob);
+      const a = document.createElement('a');
+      a.href = url; a.download = '거래명세표_모음_' + fmtDateOnly(new Date()) + '.zip';
+      document.body.appendChild(a); a.click(); document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      showToast(orders.length + '건을 zip 파일로 저장했어요.');
+    } else if (outboundBulkMode === 'delete') {
+      if (!currentUserIsAdmin) { showToast('삭제는 관리자만 할 수 있어요.'); return; }
+      if (!confirm(ids.length + '건을 완전히 삭제할까요? 되돌릴 수 없어요.')) return;
+      for (const id of ids) {
+        const o = outboundList.find(x => x.id === id);
+        await db.collection('outbound').doc(id).delete();
+        logActivity('outbound', 'delete', id, (o ? o.partnerName + ' · 총액 ' + fmtMoney(o.total) + '원' : '') + ' (여러 건 삭제)');
+        if (o && o.status === 'done') whAdjustForOrder(o.partnerName, o.items, -1);
+      }
+      showToast(ids.length + '건을 삭제했어요.');
+    }
+    outboundBulkMode = null;
+    outboundSelectedIds.clear();
+    renderOutboundList();
+  });
 
   /* ============ 렌더링 ============ */
   function renderPendingBanner() {
@@ -2189,29 +2308,45 @@ function startApp(fbConfig) {
 
     if (!filtered.length) { area.innerHTML = '<div class="empty">해당하는 출고 내역이 없어요.</div>'; return; }
 
-    let html = '<table style="white-space:nowrap;"><thead><tr><th>날짜</th><th>거래처</th><th>품목수</th><th class="num">총액</th><th>상태</th><th>창고</th><th>처리</th></tr></thead><tbody>';
+    const checkboxTh = outboundBulkMode ? '<th style="width:34px;"><input type="checkbox" id="outboundSelectAll"></th>' : '';
+    let html = '<table style="white-space:nowrap;"><thead><tr>' + checkboxTh + '<th>날짜</th><th>거래처</th><th>품목수</th><th class="num">총액</th><th>상태</th><th>창고</th></tr></thead><tbody>';
     filtered.forEach(o => {
       const itemCount = (o.items || []).length;
-      const statusExtra = '<div style="font-size:11px; color:var(--ink-soft); margin-top:2px; min-height:14px;">' +
-        (o.status === 'done' && o.completedBy ? escapeHtml(o.completedBy) + ' · ' + fmtDate(o.completedAt) : '') + '</div>';
-      html += '<tr><td>' + fmtDateOnly(o.createdAt) + '</td><td class="prod-name">' + escapeHtml(o.partnerName) + '</td>' +
+      const statusExtra = o.status === 'done' && o.completedBy
+        ? '<div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">' + escapeHtml(o.completedBy) + ' · ' + fmtDate(o.completedAt) + '</div>'
+        : '';
+      const checkboxTd = outboundBulkMode ? '<td><input type="checkbox" class="outbound-check" data-id="' + o.id + '" ' + (outboundSelectedIds.has(o.id) ? 'checked' : '') + '></td>' : '';
+      html += '<tr>' + checkboxTd +
+        '<td>' + fmtDateOnly(o.createdAt) + '</td><td class="prod-name">' + escapeHtml(o.partnerName) + '</td>' +
         '<td>' + itemCount + '건</td><td class="num">' + fmtMoney(o.total) + '</td>' +
-        '<td><span style="color:' + (o.status === 'done' ? 'var(--primary-dark)' : 'var(--red)') + '; font-weight:700;">' + (o.status === 'done' ? '이동완료' : '이동대기') + '</span>' + statusExtra + '</td>' +
+        '<td><div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:36px;"><span style="color:' + (o.status === 'done' ? 'var(--primary-dark)' : 'var(--red)') + '; font-weight:700;">' + (o.status === 'done' ? '이동완료' : '이동대기') + '</span>' + statusExtra + '</div></td>' +
         '<td>' + (o.status === 'done'
-          ? escapeHtml(o.warehouseName || '-')
-          : '<select data-wh-pick="' + o.id + '" class="wh-pick-select"><option value="">창고 선택</option>' + orderedWarehouses().map(w => '<option value="' + w.id + '"' + (o.warehouseId === w.id ? ' selected' : '') + '>' + escapeHtml(w.name) + '</option>').join('') + '</select>') +
-        '</td>' +
-        '<td class="row-actions" style="display:flex; gap:6px; justify-content:center; align-items:center;">' +
-        (o.status !== 'done'
-          ? '<button data-mark-done="' + o.id + '" style="color:var(--primary-dark);">이동하기</button>'
-          : '<button data-unmark-done="' + o.id + '" style="color:var(--red);">이동취소</button>') +
-        '<button data-view-invoice="' + o.id + '">명세표</button>' +
-        '<button data-edit-outbound="' + o.id + '">수정</button>' +
-        (currentUserIsAdmin ? '<button data-remove-outbound="' + o.id + '" style="color:var(--red);">삭제</button>' : '') +
+          ? '<div style="display:inline-flex; align-items:center; gap:6px; background:var(--bg); border-radius:8px; padding:5px 8px; white-space:nowrap;">' +
+            '<span>' + escapeHtml(o.warehouseName || '-') + '</span>' +
+            '<button data-unmark-done="' + o.id + '" style="color:var(--red); font-weight:700; white-space:nowrap;">이동취소</button>' +
+            '</div>'
+          : '<div style="display:inline-flex; align-items:center; gap:6px; background:var(--bg); border-radius:8px; padding:5px 8px; white-space:nowrap;">' +
+            '<select data-wh-pick="' + o.id + '" class="wh-pick-select"><option value="">창고 선택 ▾</option>' + orderedWarehouses().map(w => '<option value="' + w.id + '"' + (o.warehouseId === w.id ? ' selected' : '') + '>' + escapeHtml(w.name) + '</option>').join('') + '</select>' +
+            '<button data-mark-done="' + o.id + '" style="color:var(--primary-dark); font-weight:700; white-space:nowrap;">이동</button>' +
+            '</div>') +
         '</td></tr>';
     });
     html += '</tbody></table>';
     area.innerHTML = html;
+    area.querySelectorAll('.outbound-check').forEach(cb => {
+      cb.addEventListener('change', () => {
+        if (cb.checked) outboundSelectedIds.add(cb.dataset.id); else outboundSelectedIds.delete(cb.dataset.id);
+        updateOutboundBulkBar();
+      });
+    });
+    const selectAllCb = document.getElementById('outboundSelectAll');
+    if (selectAllCb) {
+      selectAllCb.addEventListener('change', () => {
+        filtered.forEach(o => { if (selectAllCb.checked) outboundSelectedIds.add(o.id); else outboundSelectedIds.delete(o.id); });
+        renderOutboundList();
+      });
+    }
+    updateOutboundBulkBar();
     area.querySelectorAll('[data-view-invoice]').forEach(btn => btn.addEventListener('click', () => {
       const o = outboundList.find(x => x.id === btn.dataset.viewInvoice);
       if (o) showInvoice(o);
@@ -2219,10 +2354,6 @@ function startApp(fbConfig) {
     area.querySelectorAll('[data-mark-done]').forEach(btn => btn.addEventListener('click', () => markTransferDone(btn.dataset.markDone)));
     area.querySelectorAll('[data-unmark-done]').forEach(btn => btn.addEventListener('click', () => unmarkTransferDone(btn.dataset.unmarkDone)));
     area.querySelectorAll('[data-remove-outbound]').forEach(btn => btn.addEventListener('click', () => removeOutbound(btn.dataset.removeOutbound)));
-    area.querySelectorAll('[data-edit-outbound]').forEach(btn => btn.addEventListener('click', () => {
-      const o = outboundList.find(x => x.id === btn.dataset.editOutbound);
-      if (o) loadOrderIntoRegisterForm(o);
-    }));
   }
   ['outFilterFrom','outFilterTo','outFilterPartner','outFilterStatus'].forEach(id => {
     document.getElementById(id).addEventListener('change', renderOutboundList);
