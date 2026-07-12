@@ -309,7 +309,6 @@
         <div class="field" style="flex:1; min-width:160px;"><label>입고담당자 연락처</label><input type="text" id="regReceiverPhoneInput"></div>
       </div>
       <div class="field"><label>배송지 주소</label><input type="text" id="regShipAddressInput"></div>
-      <div class="field"><label>이동할 창고 (내부망 전산 기준)</label><select id="regWarehouseSelect"><option value="">선택 안 함</option></select></div>
     </div>
 
     <div class="section-head"><div><h2 style="font-size:14px;">품목 담기</h2><div class="desc">품목명이나 바코드 일부를 입력하면 검색돼요. 없는 품목이면 "품목 관리" 탭에서 먼저 등록해주세요.</div></div></div>
@@ -1542,13 +1541,6 @@ function startApp(fbConfig) {
     document.getElementById('outFilterPartner').innerHTML = '<option value="">전체 거래처</option>' + list.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
     document.getElementById('ledgerFilterPartner').innerHTML = '<option value="">전체 거래처</option>' + list.map(p => '<option value="' + p.id + '">' + escapeHtml(p.name) + '</option>').join('');
   }
-  function refreshWarehouseSelect() {
-    const list = orderedWarehouses();
-    const selected = document.getElementById('regWarehouseSelect').value;
-    const opts = '<option value="">선택 안 함</option>' + list.map(w => '<option value="' + w.id + '">' + escapeHtml(w.name) + '</option>').join('');
-    document.getElementById('regWarehouseSelect').innerHTML = opts;
-    document.getElementById('regWarehouseSelect').value = selected;
-  }
 
   document.getElementById('regPartnerSelect').addEventListener('change', () => {
     const id = document.getElementById('regPartnerSelect').value;
@@ -1724,7 +1716,6 @@ function startApp(fbConfig) {
     document.getElementById('manualPartnerFields').style.display = 'none';
     ['manualPartnerNameInput','manualPartnerBizNoInput','manualPartnerCeoInput','manualPartnerAddressInput','manualPartnerContactInput',
      'regShipToInput','regReceiverInput','regReceiverPhoneInput','regShipAddressInput'].forEach(id => document.getElementById(id).value = '');
-    document.getElementById('regWarehouseSelect').value = '';
     editingOutboundId = null;
     document.getElementById('editModeNotice').style.display = 'none';
     document.getElementById('outRegisterBtn').textContent = '출고 등록';
@@ -1755,7 +1746,6 @@ function startApp(fbConfig) {
     document.getElementById('regReceiverInput').value = o.receiver || '';
     document.getElementById('regReceiverPhoneInput').value = o.receiverPhone || '';
     document.getElementById('regShipAddressInput').value = o.shipAddress || '';
-    document.getElementById('regWarehouseSelect').value = o.warehouseId || '';
     cartItems = (o.items || []).map(it => ({ productId: null, name: it.name, spec: it.spec, price: it.price, qty: it.qty, note: it.note || '' }));
     renderCart();
     document.querySelector('.tab-btn[data-tab="register"]').click();
@@ -1785,18 +1775,14 @@ function startApp(fbConfig) {
     }
     if (!cartItems.length) { showToast('담긴 품목이 없어요.'); return; }
     if (cartItems.some(it => !it.qty || it.qty <= 0)) { showToast('수량은 1 이상이어야 해요.'); return; }
-    if (!document.getElementById('regWarehouseSelect').value) { showToast('이동할 창고를 선택해주세요. ("창고 등록" 탭에서 먼저 등록해두셔야 해요)'); return; }
 
     const totals = computeTotals(cartItems);
-    const warehouseId = document.getElementById('regWarehouseSelect').value;
     const order = {
       ...partnerInfo,
       shipTo: document.getElementById('regShipToInput').value.trim(),
       receiver: document.getElementById('regReceiverInput').value.trim(),
       receiverPhone: document.getElementById('regReceiverPhoneInput').value.trim(),
       shipAddress: document.getElementById('regShipAddressInput').value.trim(),
-      warehouseId: warehouseId || null,
-      warehouseName: warehouseId ? warehouseName(warehouseId) : '',
       items: cartItems.map(it => ({ name: it.name, spec: it.spec, price: it.price, qty: it.qty, amount: it.price*it.qty, note: it.note })),
       subtotal: totals.subtotal, vat: totals.vat, total: totals.total
     };
@@ -1839,7 +1825,6 @@ function startApp(fbConfig) {
       document.getElementById('manualPartnerFields').style.display = 'none';
       ['manualPartnerNameInput','manualPartnerBizNoInput','manualPartnerCeoInput','manualPartnerAddressInput','manualPartnerContactInput',
        'regShipToInput','regReceiverInput','regReceiverPhoneInput','regShipAddressInput'].forEach(id => document.getElementById(id).value = '');
-      document.getElementById('regWarehouseSelect').value = '';
       document.getElementById('lastRegisteredPartner').textContent = partnerInfo.partnerName;
       document.getElementById('lastRegisteredArea').style.display = 'block';
       showToast('출고 등록 완료했어요.');
@@ -1870,14 +1855,19 @@ function startApp(fbConfig) {
   });
 
   async function markTransferDone(id) {
-    if (!confirm('창고이동을 완료하셨나요? 완료로 표시하면 알림 목록에서 사라져요.')) return;
+    const select = document.querySelector('[data-wh-pick="' + id + '"]');
+    const warehouseId = select ? select.value : '';
+    if (!warehouseId) { showToast('이동할 창고를 먼저 선택해주세요.'); return; }
+    const whName = warehouseName(warehouseId);
+    if (!confirm('"' + whName + '" 창고로 이동 처리할까요? 내부망 전산에도 실제로 반영하셨는지 확인해주세요.')) return;
     await db.collection('outbound').doc(id).update({
-      status: 'done', completedAt: firebase.firestore.FieldValue.serverTimestamp(), completedBy: auth.currentUser.email
+      status: 'done', warehouseId, warehouseName: whName,
+      completedAt: firebase.firestore.FieldValue.serverTimestamp(), completedBy: auth.currentUser.email
     });
     const o = outboundList.find(x => x.id === id);
-    logActivity('outbound', 'done', id, (o ? o.partnerName : '') + ' 앞 출고 창고이동 완료');
+    logActivity('outbound', 'done', id, (o ? o.partnerName : '') + ' 앞 출고 → "' + whName + '" 창고로 이동 완료');
     if (o) whAdjustForOrder(o.partnerName, o.items, +1); // 이제 내부망에도 반영됐으니, 그만큼 미결이 생겨요
-    showToast('창고이동 완료 처리했어요.');
+    showToast('"' + whName + '" 창고로 이동 처리했어요.');
   }
 
   async function removeOutbound(id) {
@@ -2083,11 +2073,11 @@ function startApp(fbConfig) {
     const pending = outboundList.filter(o => o.status !== 'done');
     if (!pending.length) { showToast('창고이동 대기 중인 게 없어요.'); return; }
 
-    // 거래처+창고 조합으로 묶고, 같은 조합으로 가는 같은 품목은 수량을 합쳐요
+    // 거래처별로 묶고, 같은 거래처로 가는 같은 품목은 수량을 합쳐요
     const groups = {};
     pending.forEach(o => {
-      const key = o.partnerName + '||' + (o.warehouseName || '');
-      if (!groups[key]) groups[key] = { partnerName: o.partnerName, warehouseName: o.warehouseName || '', items: {}, orderIds: [] };
+      const key = o.partnerName;
+      if (!groups[key]) groups[key] = { partnerName: o.partnerName, items: {}, orderIds: [] };
       groups[key].orderIds.push(o.id);
       (o.items || []).forEach(it => {
         const itemKey = it.name + '||' + (it.spec || '');
@@ -2097,15 +2087,16 @@ function startApp(fbConfig) {
     });
 
     let html = '<h1 style="text-align:center; margin-bottom:4px;">창고이동 정리</h1>' +
-      '<div style="text-align:center; color:var(--ink-soft); font-size:12px; margin-bottom:18px;">내부망 전산에 입력하실 때 옆에 띄워두고 보세요. 다 입력하셨으면 완료 처리해주세요.</div>';
+      '<div style="text-align:center; color:var(--ink-soft); font-size:12px; margin-bottom:18px;">내부망 전산에 입력하실 때 옆에 띄워두고 보세요. 창고를 고르고 완료 처리해주세요.</div>';
 
+    const whOpts = '<option value="">창고 선택</option>' + orderedWarehouses().map(w => '<option value="' + w.id + '">' + escapeHtml(w.name) + '</option>').join('');
     Object.keys(groups).forEach(key => {
       const g = groups[key];
       html += '<div style="border:1px solid var(--line); border-radius:10px; padding:14px 16px; margin-bottom:14px;">' +
-        '<div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; gap:10px;">' +
-        '<div><div style="font-size:17px; font-weight:700;">' + escapeHtml(g.partnerName) + '</div>' +
-        '<div style="font-size:13px; color:var(--primary-dark); font-weight:600; margin-top:2px;">📦 ' + (g.warehouseName ? escapeHtml(g.warehouseName) + ' 창고로' : '창고 미지정 (수정에서 지정해주세요)') + '</div></div>' +
-        '<button class="primary-btn" data-transfer-done-group="' + escapeHtml(key) + '" style="padding:6px 14px; font-size:12px; flex:none;">완료 처리</button>' +
+        '<div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; gap:10px; flex-wrap:wrap;">' +
+        '<div style="font-size:17px; font-weight:700;">' + escapeHtml(g.partnerName) + '</div>' +
+        '<div style="display:flex; gap:6px;"><select data-transfer-wh="' + escapeHtml(key) + '" style="font-size:12px;">' + whOpts + '</select>' +
+        '<button class="primary-btn" data-transfer-done-group="' + escapeHtml(key) + '" style="padding:6px 14px; font-size:12px; flex:none;">완료 처리</button></div>' +
         '</div><table style="width:100%;"><tbody>';
       Object.values(g.items).forEach(it => {
         html += '<tr><td style="font-size:16px; padding:6px 0;">' + escapeHtml(it.name) +
@@ -2121,12 +2112,19 @@ function startApp(fbConfig) {
       btn.addEventListener('click', async () => {
         const key = btn.dataset.transferDoneGroup;
         const g = groups[key];
-        if (!confirm('"' + g.partnerName + '"(' + (g.warehouseName || '창고 미지정') + ') 앞으로 가는 대기 중인 출고를 전부 창고이동 완료 처리할까요?')) return;
+        const whSelect = document.querySelector('[data-transfer-wh="' + key + '"]');
+        const warehouseId = whSelect ? whSelect.value : '';
+        if (!warehouseId) { showToast('창고를 먼저 선택해주세요.'); return; }
+        const whName = warehouseName(warehouseId);
+        if (!confirm('"' + g.partnerName + '" 앞으로 가는 대기 중인 출고를 전부 "' + whName + '" 창고로 이동 완료 처리할까요?')) return;
         for (const id of g.orderIds) {
           await db.collection('outbound').doc(id).update({
-            status: 'done', completedAt: firebase.firestore.FieldValue.serverTimestamp(), completedBy: auth.currentUser.email
+            status: 'done', warehouseId, warehouseName: whName,
+            completedAt: firebase.firestore.FieldValue.serverTimestamp(), completedBy: auth.currentUser.email
           });
-          logActivity('outbound', 'done', id, g.partnerName + ' 앞 출고 창고이동 완료 (모아보기에서 일괄 처리)');
+          const o = outboundList.find(x => x.id === id);
+          logActivity('outbound', 'done', id, g.partnerName + ' 앞 출고 → "' + whName + '" 창고로 이동 완료 (모아보기에서 일괄 처리)');
+          if (o) whAdjustForOrder(o.partnerName, o.items, +1);
         }
         showToast('"' + g.partnerName + '" 완료 처리했어요.');
         showTransferSummary();
@@ -2198,14 +2196,17 @@ function startApp(fbConfig) {
         ? '<div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">' + escapeHtml(o.completedBy) + ' · ' + fmtDate(o.completedAt) + '</div>'
         : '';
       html += '<tr><td>' + fmtDateOnly(o.createdAt) + '</td><td class="prod-name">' + escapeHtml(o.partnerName) + '</td>' +
-        '<td>' + escapeHtml(o.warehouseName || '-') + '</td>' +
+        '<td>' + (o.status === 'done'
+          ? escapeHtml(o.warehouseName || '-')
+          : '<select data-wh-pick="' + o.id + '" style="font-size:12px; padding:3px 4px;"><option value="">창고 선택</option>' + orderedWarehouses().map(w => '<option value="' + w.id + '"' + (o.warehouseId === w.id ? ' selected' : '') + '>' + escapeHtml(w.name) + '</option>').join('') + '</select>') +
+        '</td>' +
         '<td>' + itemCount + '건</td><td class="num">' + fmtMoney(o.total) + '</td>' +
         '<td><span class="status-pill ' + (o.status === 'done' ? 'status-done' : 'status-pending') + '">' + (o.status === 'done' ? '이동완료' : '이동대기') + '</span>' + statusExtra + '</td>' +
         '<td class="row-actions" style="display:flex; gap:6px; justify-content:center;">' +
         '<button data-view-invoice="' + o.id + '">명세표</button>' +
         '<button data-edit-outbound="' + o.id + '">수정</button>' +
         (o.status !== 'done'
-          ? '<button data-mark-done="' + o.id + '" style="color:var(--primary-dark);">이동완료</button>'
+          ? '<button data-mark-done="' + o.id + '" style="color:var(--primary-dark);">이동하기</button>'
           : '<button data-unmark-done="' + o.id + '" style="color:var(--red);">이동취소</button>') +
         (currentUserIsAdmin ? '<button data-remove-outbound="' + o.id + '" style="color:var(--red);">삭제</button>' : '') +
         '</td></tr>';
@@ -2285,7 +2286,6 @@ function startApp(fbConfig) {
 
   function renderAll() {
     refreshPartnerSelects();
-    refreshWarehouseSelect();
     renderPartnerList();
     renderWarehouseList();
     renderWarehouseStatus();
