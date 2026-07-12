@@ -2312,29 +2312,36 @@ function startApp(fbConfig) {
     } else if (outboundBulkMode === 'excel') {
       showToast(orders.length + '건 엑셀로 묶는 중이에요...');
       const zip = new JSZip();
+      let excelFailed = false;
       for (const o of orders) {
         try {
           const result = await buildInvoiceExcelBlob(o);
           zip.file(result.fname, result.blob);
-        } catch (e) { showToast(e.message); return; }
+        } catch (e) { showToast(e.message); excelFailed = true; break; }
       }
-      const outBlob = await zip.generateAsync({ type: 'blob' });
-      const url = URL.createObjectURL(outBlob);
-      const a = document.createElement('a');
-      a.href = url; a.download = '거래명세표_모음_' + fmtDateOnly(new Date()) + '.zip';
-      document.body.appendChild(a); a.click(); document.body.removeChild(a);
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
-      showToast(orders.length + '건을 zip 파일로 저장했어요.');
+      if (!excelFailed) {
+        const outBlob = await zip.generateAsync({ type: 'blob' });
+        const url = URL.createObjectURL(outBlob);
+        const a = document.createElement('a');
+        a.href = url; a.download = '거래명세표_모음_' + fmtDateOnly(new Date()) + '.zip';
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        setTimeout(() => URL.revokeObjectURL(url), 5000);
+        showToast(orders.length + '건을 zip 파일로 저장했어요.');
+      }
     } else if (outboundBulkMode === 'delete') {
       if (!currentUserIsAdmin) { showToast('삭제는 관리자만 할 수 있어요.'); return; }
       if (!confirm(ids.length + '건을 완전히 삭제할까요? 되돌릴 수 없어요.')) return;
-      for (const id of ids) {
-        const o = outboundList.find(x => x.id === id);
-        await db.collection('outbound').doc(id).delete();
-        logActivity('outbound', 'delete', id, (o ? o.partnerName + ' · 총액 ' + fmtMoney(o.total) + '원' : '') + ' (여러 건 삭제)');
-        if (o && o.status === 'done') whAdjustForOrder(o.partnerName, o.items, -1);
+      try {
+        for (const id of ids) {
+          const o = outboundList.find(x => x.id === id);
+          await db.collection('outbound').doc(id).delete();
+          logActivity('outbound', 'delete', id, (o ? o.partnerName + ' · 총액 ' + fmtMoney(o.total) + '원' : '') + ' (여러 건 삭제)');
+          if (o && o.status === 'done') whAdjustForOrder(o.partnerName, o.items, -1);
+        }
+        showToast(ids.length + '건을 삭제했어요.');
+      } catch (e) {
+        showToast('일부 삭제 중 문제가 있었어요: ' + e.message);
       }
-      showToast(ids.length + '건을 삭제했어요.');
     }
     outboundBulkMode = null;
     outboundSelectedIds.clear();
