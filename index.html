@@ -1218,9 +1218,13 @@ function startApp(fbConfig) {
       if (!whData.products[name]) whData.products[name] = { stores: {}, updatedAt: whNowStamp() };
       if (!whData.products[name].stores) whData.products[name].stores = {};
       const cur = whData.products[name].stores[partnerName] || 0;
-      whData.products[name].stores[partnerName] = Math.max(0, cur + sign * it.qty);
+      const next = Math.max(0, cur + sign * it.qty);
+      if (next === 0) delete whData.products[name].stores[partnerName]; // 0이 되면 그 거래처 칸 자체를 지워요
+      else whData.products[name].stores[partnerName] = next;
       whData.products[name].updatedAt = whNowStamp();
       if (!whData.storeOrder.includes(partnerName)) whData.storeOrder.push(partnerName);
+      // 이 상품이 어느 거래처에도 남은 수량이 없으면, 상품 줄 자체를 표에서 없애요
+      if (!Object.keys(whData.products[name].stores).length) delete whData.products[name];
     });
     whSaveData();
   }
