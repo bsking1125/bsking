@@ -214,6 +214,7 @@
   <div id="pendingTransferBanner" class="transfer-banner" style="display:none;"></div>
 
   <div class="tab-nav" id="tabNav">
+    <button class="tab-btn" data-tab="whstock">미결 현황</button>
     <button class="tab-btn active" data-tab="register">출고 등록</button>
     <button class="tab-btn" data-tab="outbound-list">출고 내역</button>
     <button class="tab-btn" data-tab="ledger">전체 품목 기록</button>
@@ -242,7 +243,42 @@
   </div>
 
   <!-- 출고 등록 -->
-  <div class="tab-panel" data-panel="register">
+  <!-- 미결 현황 (창고 자체 미결 매트릭스) -->
+  <div class="tab-panel" data-panel="whstock" style="display:none;">
+    <div class="section-head">
+      <div><h2>미결 현황</h2><div class="desc">상품별 · 거래처별 누적 미결 수량이에요. 온라인 관리와는 별개의 데이터예요.</div></div>
+      <div id="whAdminBar" style="display:none; gap:8px; flex-wrap:wrap;">
+        <button class="ghost-btn" id="whToggleMergeStore">거래처 합치기</button>
+        <button class="ghost-btn" id="whToggleAddProduct">+ 상품 직접 추가</button>
+        <button class="ghost-btn" id="whToggleDeleteMode" style="color:var(--red); border-color:var(--red);">삭제</button>
+        <button class="primary-btn" id="whConfirmDeleteSelectedBtn" style="display:none; background:var(--red);">선택 삭제</button>
+        <button class="ghost-btn" id="whResetAllBtn" style="color:var(--red); border-color:var(--red);">전체 초기화</button>
+      </div>
+    </div>
+    <div id="whMergeStoreBox" style="display:none; margin-bottom:14px; background:var(--amber-tint); border:1px solid var(--amber); border-radius:8px; padding:12px;">
+      <div class="add-row">
+        <select id="whMergeToSelect"><option value="">대상 거래처 (남을 쪽)</option></select>
+        <span style="color:var(--ink-soft); font-size:13px;">←</span>
+        <select id="whMergeFromSelect"><option value="">합칠 거래처 (없어질 쪽)</option></select>
+        <button class="primary-btn" id="whMergeStoreBtn">합치기</button>
+      </div>
+    </div>
+    <div id="whAddProductBox" style="display:none; margin-bottom:14px;">
+      <div class="add-row">
+        <input type="text" id="whNewProdName" placeholder="상품명">
+        <input type="text" id="whNewProdStore" list="whStoreList" placeholder="거래처 (비워두면 '초기값')">
+        <datalist id="whStoreList"></datalist>
+        <input type="number" id="whNewProdQty" class="qty" placeholder="수량" value="0">
+        <button class="primary-btn" id="whAddProductBtn">추가</button>
+      </div>
+    </div>
+    <div class="add-row" style="margin-bottom:12px;">
+      <input type="text" id="whStockSearchInput" placeholder="상품명으로 검색">
+    </div>
+    <div class="table-scroll" id="whStockTableArea"></div>
+  </div>
+
+
     <div class="section-head">
       <div><h2>출고 등록</h2><div class="desc">거래처를 고르면 정보가 자동으로 채워져요. 품목은 검색해서 여러 개 담을 수 있어요.</div></div>
     </div>
@@ -777,6 +813,9 @@ function startApp(fbConfig) {
   }
 
   /* ============ 3단계: 실시간 데이터 ============ */
+  let whData = { products: {}, storeOrder: [], log: [] }; // 미결 현황(창고 자체) 데이터
+  let whDeleteMode = false;
+  let whSelectedForDelete = new Set();
   let partners = [];      // [{id, name, bizNo, ceo, address, contact, shipTo, receiver, receiverPhone, shipAddress, order}]
   let warehouses = [];    // [{id, name, order}]
   let productMaster = []; // [{id, name, spec, barcode, defaultPrice, order}]
@@ -816,6 +855,14 @@ function startApp(fbConfig) {
   function initRealtimeListeners() {
     if (listenersStarted) return;
     listenersStarted = true;
+
+    db.collection('warehouseInventory').doc('data').onSnapshot(doc => {
+      whData = doc.exists ? (doc.data() || {}) : {};
+      if (!whData.products) whData.products = {};
+      if (!whData.storeOrder) whData.storeOrder = [];
+      if (!whData.log) whData.log = [];
+      whRenderStockTable();
+    }, err => showToast('미결 현황을 불러오지 못했어요: ' + err.message));
 
     db.collection('partners').onSnapshot(snap => {
       partners = snap.docs.map(d => ({ id: d.id, ...d.data() }));
@@ -1078,6 +1125,179 @@ function startApp(fbConfig) {
     });
     area.innerHTML = html;
   }
+
+  /* ============ 미결 현황 (창고 자체 매트릭스) ============ */
+  function whSaveData() {
+    db.collection('warehouseInventory').doc('data').set(whData).catch(err => showToast('저장에 실패했어요: ' + err.message));
+  }
+  function whAllStores() {
+    const set = new Set(whData.storeOrder || []);
+    Object.values(whData.products || {}).forEach(p => Object.keys(p.stores || {}).forEach(s => set.add(s)));
+    return Array.from(set);
+  }
+  function whTotalFor(name) {
+    const p = whData.products[name];
+    if (!p) return 0;
+    return Object.values(p.stores || {}).reduce((a, b) => a + b, 0);
+  }
+  function whNowStamp() { return new Date().toISOString(); }
+
+  function whRenderStockTable() {
+    const area = document.getElementById('whStockTableArea');
+    if (!area) return;
+    const search = (document.getElementById('whStockSearchInput') || {}).value || '';
+    const stores = whAllStores();
+    let names = Object.keys(whData.products || {});
+    if (search.trim()) names = names.filter(n => n.toLowerCase().includes(search.trim().toLowerCase()));
+    names.sort((a, b) => whTotalFor(b) - whTotalFor(a));
+
+    if (!names.length) { area.innerHTML = '<div class="empty">등록된 상품이 없어요.</div>'; return; }
+
+    let html = '<table><thead><tr><th>상품명</th><th class="num">합계</th>';
+    stores.forEach(s => { html += '<th class="num">' + escapeHtml(s) + '</th>'; });
+    html += '<th style="width:50px;">' + (whDeleteMode ? '<input type="checkbox" id="whSelectAllDelete">' : '') + '</th></tr></thead><tbody>';
+    names.forEach(name => {
+      const p = whData.products[name];
+      html += '<tr><td class="prod-name">' + escapeHtml(name) + '</td><td class="num">' + whTotalFor(name) + '</td>';
+      stores.forEach(s => {
+        const v = (p.stores && p.stores[s]) || 0;
+        html += '<td class="num wh-editable-cell" data-product="' + escapeHtml(name) + '" data-store="' + escapeHtml(s) + '" title="클릭해서 직접 수정">' + (v ? v : '-') + '</td>';
+      });
+      html += '<td style="text-align:center;">' + (whDeleteMode ? '<input type="checkbox" class="wh-del-check" data-name="' + escapeHtml(name) + '" ' + (whSelectedForDelete.has(name) ? 'checked' : '') + '>' : '') + '</td></tr>';
+    });
+    html += '</tbody></table>';
+    area.innerHTML = html;
+
+    area.querySelectorAll('.wh-editable-cell').forEach(td => {
+      td.addEventListener('click', () => {
+        const name = td.dataset.product, store = td.dataset.store;
+        const cur = (whData.products[name].stores && whData.products[name].stores[store]) || 0;
+        const val = prompt('"' + name + '" / "' + store + '" 수량', cur);
+        if (val === null) return;
+        const num = Math.max(0, Math.round(Number(val)) || 0);
+        if (!whData.products[name].stores) whData.products[name].stores = {};
+        whData.products[name].stores[store] = num;
+        whSaveData();
+        whRenderStockTable();
+      });
+    });
+    area.querySelectorAll('.wh-del-check').forEach(cb => {
+      cb.addEventListener('change', () => {
+        if (cb.checked) whSelectedForDelete.add(cb.dataset.name); else whSelectedForDelete.delete(cb.dataset.name);
+        whUpdateDeleteBar();
+      });
+    });
+    const selectAll = document.getElementById('whSelectAllDelete');
+    if (selectAll) {
+      selectAll.addEventListener('change', () => {
+        names.forEach(n => { if (selectAll.checked) whSelectedForDelete.add(n); else whSelectedForDelete.delete(n); });
+        whRenderStockTable();
+        whUpdateDeleteBar();
+      });
+    }
+
+    const storeListEl = document.getElementById('whStoreList');
+    if (storeListEl) storeListEl.innerHTML = stores.map(s => '<option value="' + escapeHtml(s) + '">').join('');
+    document.getElementById('whAdminBar').style.display = currentUserIsAdmin ? 'flex' : 'none';
+  }
+
+  function whUpdateDeleteBar() {
+    const btn = document.getElementById('whConfirmDeleteSelectedBtn');
+    if (!btn) return;
+    btn.style.display = whDeleteMode ? '' : 'none';
+    btn.textContent = whSelectedForDelete.size ? ('선택 ' + whSelectedForDelete.size + '개 삭제') : '선택 삭제';
+    btn.disabled = whSelectedForDelete.size === 0;
+  }
+
+  function whAddProduct(name, store, qty) {
+    name = (name || '').trim();
+    store = (store || '').trim() || '초기값';
+    qty = Math.max(0, Math.round(Number(qty)) || 0);
+    if (!name) { showToast('상품명을 입력해주세요.'); return; }
+    if (!whData.products[name]) whData.products[name] = { stores: {}, updatedAt: whNowStamp() };
+    if (!whData.products[name].stores) whData.products[name].stores = {};
+    whData.products[name].stores[store] = (whData.products[name].stores[store] || 0) + qty;
+    if (!whData.storeOrder.includes(store)) whData.storeOrder.push(store);
+    whSaveData();
+    whRenderStockTable();
+    showToast('"' + name + '"을 추가했어요.');
+  }
+
+  function whRemoveProduct(name, skipConfirm) {
+    if (!currentUserIsAdmin) { showToast('삭제는 관리자만 할 수 있어요.'); return; }
+    if (!skipConfirm && !confirm('"' + name + '" 상품을 삭제할까요?')) return;
+    delete whData.products[name];
+    whSaveData();
+  }
+
+  function whMergeStores(fromStore, toStore) {
+    if (!fromStore || !toStore) { showToast('두 거래처를 모두 선택해주세요.'); return; }
+    if (fromStore === toStore) { showToast('서로 다른 거래처를 골라주세요.'); return; }
+    if (!confirm('"' + fromStore + '"의 수량을 전부 "' + toStore + '"로 합칠까요? "' + fromStore + '"는 사라져요.')) return;
+    Object.values(whData.products).forEach(p => {
+      if (!p.stores || !(fromStore in p.stores)) return;
+      const qty = p.stores[fromStore] || 0;
+      delete p.stores[fromStore];
+      if (qty > 0) { p.stores[toStore] = (p.stores[toStore] || 0) + qty; }
+    });
+    whData.storeOrder = (whData.storeOrder || []).filter(s => s !== fromStore);
+    whSaveData();
+    whRenderStockTable();
+    showToast('"' + fromStore + '"를 "' + toStore + '"로 합쳤어요.');
+  }
+
+  document.getElementById('whStockSearchInput').addEventListener('input', whRenderStockTable);
+  document.getElementById('whToggleAddProduct').addEventListener('click', () => {
+    const box = document.getElementById('whAddProductBox');
+    box.style.display = box.style.display === 'none' ? 'block' : 'none';
+  });
+  document.getElementById('whAddProductBtn').addEventListener('click', () => {
+    whAddProduct(document.getElementById('whNewProdName').value, document.getElementById('whNewProdStore').value, document.getElementById('whNewProdQty').value);
+    document.getElementById('whNewProdName').value = '';
+    document.getElementById('whNewProdStore').value = '';
+    document.getElementById('whNewProdQty').value = 0;
+  });
+  document.getElementById('whToggleMergeStore').addEventListener('click', () => {
+    const box = document.getElementById('whMergeStoreBox');
+    const opening = box.style.display === 'none';
+    box.style.display = opening ? 'block' : 'none';
+    if (opening) {
+      const opts = '<option value="">거래처 선택</option>' + whAllStores().map(s => '<option value="' + escapeHtml(s) + '">' + escapeHtml(s) + '</option>').join('');
+      document.getElementById('whMergeToSelect').innerHTML = opts;
+      document.getElementById('whMergeFromSelect').innerHTML = opts;
+    }
+  });
+  document.getElementById('whMergeStoreBtn').addEventListener('click', () => {
+    whMergeStores(document.getElementById('whMergeFromSelect').value, document.getElementById('whMergeToSelect').value);
+    document.getElementById('whMergeStoreBox').style.display = 'none';
+  });
+  document.getElementById('whToggleDeleteMode').addEventListener('click', () => {
+    whDeleteMode = !whDeleteMode;
+    document.getElementById('whToggleDeleteMode').textContent = whDeleteMode ? '삭제 취소' : '삭제';
+    if (!whDeleteMode) whSelectedForDelete.clear();
+    whRenderStockTable();
+    whUpdateDeleteBar();
+  });
+  document.getElementById('whConfirmDeleteSelectedBtn').addEventListener('click', () => {
+    if (!whSelectedForDelete.size) return;
+    const names = [...whSelectedForDelete];
+    if (!confirm(names.length + '개 상품을 삭제할까요?')) return;
+    names.forEach(name => whRemoveProduct(name, true));
+    whSelectedForDelete.clear();
+    whDeleteMode = false;
+    document.getElementById('whToggleDeleteMode').textContent = '삭제';
+    whSaveData();
+    whRenderStockTable();
+    showToast(names.length + '개 상품을 삭제했어요.');
+  });
+  document.getElementById('whResetAllBtn').addEventListener('click', () => {
+    if (!currentUserIsAdmin) { showToast('초기화는 관리자만 할 수 있어요.'); return; }
+    if (!confirm('미결 현황 전체를 초기화할까요? 되돌릴 수 없어요.')) return;
+    whData = { products: {}, storeOrder: [], log: [] };
+    whSaveData();
+    whRenderStockTable();
+    showToast('초기화했어요.');
+  });
 
   /* ============ 품목 마스터 관리 ============ */
   function readProductFormFields() {
@@ -2044,6 +2264,7 @@ function startApp(fbConfig) {
     renderOutboundList();
     renderLedger();
     renderPendingBanner();
+    whRenderStockTable();
   }
 
   /* ============ 탭 전환 ============ */
