@@ -1876,7 +1876,10 @@ document.getElementById('invoiceExportBtn').addEventListener('click', async () =
   const aoa = [['수령인', '받는분전화번호', '받는분주소(전체, 분할)', '품목명', '보내는 사람']];
   invoiceRows.forEach(r => {
     const count = Math.max(1, Math.round(Number(r.count)) || 1);
-    for (let i = 0; i < count; i++) aoa.push([r.recipient, r.phone, r.address, r.item, r.sender]);
+    for (let i = 0; i < count; i++) {
+      const itemTextWithMark = count > 1 ? r.item + ' @' + (i + 1) : r.item;
+      aoa.push([r.recipient, r.phone, r.address, itemTextWithMark, r.sender]);
+    }
   });
   const ws = XLSX.utils.aoa_to_sheet(aoa);
   ws['!cols'] = [{wch:10},{wch:14},{wch:40},{wch:30},{wch:20}];
