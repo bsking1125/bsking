@@ -232,6 +232,7 @@
         <button class="ghost-btn" id="whResetAllBtn" style="color:var(--red); border-color:var(--red);">전체 초기화</button>
       </div>
     </div>
+    <div id="whWarehouseTabs" style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:16px;"></div>
     <div id="whMergeStoreBox" style="display:none; margin-bottom:14px; background:var(--amber-tint); border:1px solid var(--amber); border-radius:8px; padding:12px;">
       <div class="add-row">
         <select id="whMergeToSelect"><option value="">대상 거래처 (남을 쪽)</option></select>
@@ -523,9 +524,14 @@
     </div>
     <div class="card" style="margin-bottom:20px;">
       <div class="add-row">
-        <input type="text" id="warehouseNameInput" placeholder="창고명 (예: 대리점1호창고)">
+        <input type="text" id="warehouseNameInput" placeholder="창고명 (예: 위탁판매창고)">
+        <select id="warehouseTypeInput" style="flex:none; width:160px;">
+          <option value="normal">일반 창고</option>
+          <option value="promo">홍보품 창고</option>
+        </select>
         <button class="primary-btn" id="addWarehouseBtn">창고 추가</button>
       </div>
+      <div class="desc" style="margin-top:6px;">"홍보품 창고"로 등록하면, 미결 현황에서 거래처가 아니라 월별로 쌓여서 보여요. "홍보품 처리" 탭 내용이 여기로 들어가요.</div>
     </div>
     <div id="warehouseListArea"></div>
   </div>
@@ -839,7 +845,8 @@ function startApp(fbConfig) {
   }
 
   /* ============ 3단계: 실시간 데이터 ============ */
-  let whData = { products: {}, storeOrder: [], log: [] }; // 미결 현황(창고 자체) 데이터
+  let whDataByWarehouse = {}; // { 창고id: { products: {...}, storeOrder: [...] } } — 창고별로 따로 관리해요
+  let activeWhWarehouseId = null; // 미결 현황 탭에서 지금 보고 있는 창고
   let whDeleteMode = false;
   let whSelectedForDelete = new Set();
   let partners = [];      // [{id, name, bizNo, ceo, address, contact, shipTo, receiver, receiverPhone, shipAddress, order}]
@@ -1032,9 +1039,10 @@ function startApp(fbConfig) {
 
   document.getElementById('addWarehouseBtn').addEventListener('click', async () => {
     const name = document.getElementById('warehouseNameInput').value.trim();
+    const type = document.getElementById('warehouseTypeInput').value;
     if (!name) { showToast('창고명을 입력해주세요.'); return; }
-    await db.collection('b2bWarehouses').add({ name, order: nextOrder(warehouses), createdAt: firebase.firestore.FieldValue.serverTimestamp() });
-    logActivity('warehouse', 'create', null, name + ' 창고 등록');
+    await db.collection('b2bWarehouses').add({ name, type, order: nextOrder(warehouses), createdAt: firebase.firestore.FieldValue.serverTimestamp() });
+    logActivity('warehouse', 'create', null, name + ' 창고 등록 (' + (type === 'promo' ? '홍보품' : '일반') + ')');
     document.getElementById('warehouseNameInput').value = '';
     showToast('"' + name + '" 창고를 등록했어요.');
   });
@@ -1063,16 +1071,29 @@ function startApp(fbConfig) {
     if (!area) return;
     const list = orderedWarehouses();
     if (!list.length) { area.innerHTML = '<div class="empty">아직 등록된 창고가 없어요.</div>'; return; }
-    let html = '<table><thead><tr><th>창고명</th><th></th></tr></thead><tbody>';
+    let html = '<table><thead><tr><th>창고명</th><th>종류</th><th></th></tr></thead><tbody>';
     list.forEach(w => {
       html += '<tr><td class="prod-name">' + escapeHtml(w.name) + '</td>' +
+        '<td>' + (w.type === 'promo' ? '🎁 홍보품 창고' : '📦 일반 창고') + '</td>' +
         '<td class="row-actions"><button data-edit-warehouse="' + w.id + '">수정</button>' +
+        ' <button data-toggle-warehouse-type="' + w.id + '">종류 전환</button>' +
         (currentUserIsAdmin ? ' <button data-remove-warehouse="' + w.id + '">삭제</button>' : '') + '</td></tr>';
     });
     html += '</tbody></table>';
     area.innerHTML = html;
     area.querySelectorAll('[data-edit-warehouse]').forEach(btn => btn.addEventListener('click', () => editWarehouse(btn.dataset.editWarehouse)));
     area.querySelectorAll('[data-remove-warehouse]').forEach(btn => btn.addEventListener('click', () => removeWarehouse(btn.dataset.removeWarehouse)));
+    area.querySelectorAll('[data-toggle-warehouse-type]').forEach(btn => btn.addEventListener('click', () => toggleWarehouseType(btn.dataset.toggleWarehouseType)));
+  }
+
+  async function toggleWarehouseType(id) {
+    const w = warehouses.find(w => w.id === id);
+    if (!w) return;
+    const newType = w.type === 'promo' ? 'normal' : 'promo';
+    if (!confirm('"' + w.name + '"를 ' + (newType === 'promo' ? '홍보품 창고' : '일반 창고') + '로 바꿀까요?')) return;
+    await db.collection('b2bWarehouses').doc(id).update({ type: newType });
+    logActivity('warehouse', 'update', id, w.name + ' 종류를 ' + (newType === 'promo' ? '홍보품' : '일반') + '로 변경');
+    showToast('창고 종류를 바꿨어요.');
   }
 
   function renderWarehouseStatus() {
@@ -1130,29 +1151,65 @@ function startApp(fbConfig) {
   }
 
   /* ============ 미결 현황 (창고 자체 매트릭스) ============ */
-  function whSaveData() {
-    db.collection('b2bInventory').doc('data').set(whData).catch(err => showToast('저장에 실패했어요: ' + err.message));
+  function whSaveData(warehouseId) {
+    if (!warehouseId) return;
+    const data = whDataByWarehouse[warehouseId] || { products: {}, storeOrder: [] };
+    db.collection('b2bInventory').doc(warehouseId).set(data).catch(err => showToast('저장에 실패했어요: ' + err.message));
   }
-  function whAllStores() {
+  function whAllStores(warehouseId) {
+    const whData = whDataByWarehouse[warehouseId] || { products: {}, storeOrder: [] };
     const set = new Set(whData.storeOrder || []);
     Object.values(whData.products || {}).forEach(p => Object.keys(p.stores || {}).forEach(s => set.add(s)));
     return Array.from(set);
   }
-  function whTotalFor(name) {
-    const p = whData.products[name];
+  function whTotalFor(warehouseId, name) {
+    const whData = whDataByWarehouse[warehouseId];
+    const p = whData && whData.products[name];
     if (!p) return 0;
     return Object.values(p.stores || {}).reduce((a, b) => a + b, 0);
   }
   function whNowStamp() { return new Date().toISOString(); }
+  function activeWarehouseType() {
+    const w = warehouses.find(w => w.id === activeWhWarehouseId);
+    return w ? (w.type || 'normal') : 'normal';
+  }
+
+  function whRenderWarehouseTabs() {
+    const tabsEl = document.getElementById('whWarehouseTabs');
+    if (!tabsEl) return;
+    const list = orderedWarehouses();
+    if (!list.length) { tabsEl.innerHTML = ''; return; }
+    if (!activeWhWarehouseId || !list.some(w => w.id === activeWhWarehouseId)) activeWhWarehouseId = list[0].id;
+    tabsEl.innerHTML = list.map(w => {
+      const active = w.id === activeWhWarehouseId;
+      const icon = w.type === 'promo' ? '🎁' : '📦';
+      return '<button data-wh-tab="' + w.id + '" class="' + (active ? 'primary-btn' : 'ghost-btn') + '" style="padding:8px 14px; flex:none;">' + icon + ' ' + escapeHtml(w.name) + '</button>';
+    }).join('');
+    tabsEl.querySelectorAll('[data-wh-tab]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        activeWhWarehouseId = btn.dataset.whTab;
+        whSelectedForDelete.clear();
+        whDeleteMode = false;
+        whRenderStockTable();
+      });
+    });
+  }
 
   function whRenderStockTable() {
     const area = document.getElementById('whStockTableArea');
     if (!area) return;
+    whRenderWarehouseTabs();
+    if (!activeWhWarehouseId) { area.innerHTML = '<div class="empty">먼저 "창고 등록" 탭에서 창고를 하나 등록해주세요.</div>'; return; }
+    const isPromo = activeWarehouseType() === 'promo';
+    document.getElementById('whToggleMergeStore').style.display = isPromo ? 'none' : '';
+    document.getElementById('whToggleAddProduct').style.display = isPromo ? 'none' : '';
+
     const search = (document.getElementById('whStockSearchInput') || {}).value || '';
-    const stores = whAllStores();
+    const stores = whAllStores(activeWhWarehouseId).sort();
+    const whData = whDataByWarehouse[activeWhWarehouseId] || { products: {} };
     let names = Object.keys(whData.products || {});
     if (search.trim()) names = names.filter(n => n.toLowerCase().includes(search.trim().toLowerCase()));
-    names.sort((a, b) => whTotalFor(b) - whTotalFor(a));
+    names.sort((a, b) => whTotalFor(activeWhWarehouseId, b) - whTotalFor(activeWhWarehouseId, a));
 
     if (!names.length) { area.innerHTML = '<div class="empty">등록된 상품이 없어요.</div>'; whUpdateDeleteBar(); return; }
 
@@ -1161,7 +1218,7 @@ function startApp(fbConfig) {
     html += '<th style="width:50px;">' + (whDeleteMode ? '<input type="checkbox" id="whSelectAllDelete">' : '') + '</th></tr></thead><tbody>';
     names.forEach(name => {
       const p = whData.products[name];
-      html += '<tr><td class="prod-name">' + escapeHtml(name) + '</td><td class="num">' + whTotalFor(name) + '</td>';
+      html += '<tr><td class="prod-name">' + escapeHtml(name) + '</td><td class="num">' + whTotalFor(activeWhWarehouseId, name) + '</td>';
       stores.forEach(s => {
         const v = (p.stores && p.stores[s]) || 0;
         html += '<td class="num wh-editable-cell" data-product="' + escapeHtml(name) + '" data-store="' + escapeHtml(s) + '" title="클릭해서 직접 수정">' + (v ? v : '-') + '</td>';
@@ -1173,14 +1230,16 @@ function startApp(fbConfig) {
 
     area.querySelectorAll('.wh-editable-cell').forEach(td => {
       td.addEventListener('click', () => {
+        if (isPromo) { showToast('홍보품 창고 수량은 "홍보품 처리" 탭에서 고쳐주세요.'); return; }
         const name = td.dataset.product, store = td.dataset.store;
+        const whData = whDataByWarehouse[activeWhWarehouseId];
         const cur = (whData.products[name].stores && whData.products[name].stores[store]) || 0;
         const val = prompt('"' + name + '" / "' + store + '" 수량', cur);
         if (val === null) return;
         const num = Math.max(0, Math.round(Number(val)) || 0);
         if (!whData.products[name].stores) whData.products[name].stores = {};
         whData.products[name].stores[store] = num;
-        whSaveData();
+        whSaveData(activeWhWarehouseId);
         whRenderStockTable();
       });
     });
@@ -1212,51 +1271,59 @@ function startApp(fbConfig) {
     btn.disabled = whSelectedForDelete.size === 0;
   }
 
-  // 출고 등록/수정/삭제/창고이동완료·취소에 맞춰 미결 매트릭스를 자동으로 조정해요.
-  // sign이 +1이면 쌓고(미결 발생), -1이면 빼요(미결 해소)
-  function whAdjustForOrder(partnerName, items, sign) {
-    if (!partnerName || !items || !items.length) return;
-    (items || []).forEach(it => {
+  // 출고 등록/수정/삭제/창고이동완료·취소/매출처리/홍보품처리에 맞춰 미결 매트릭스를 자동으로 조정해요.
+  // sign이 +1이면 쌓고(미결 발생), -1이면 빼요(미결 해소). warehouseId가 없으면(=아직 창고이동 전) 아무것도 안 해요.
+  function whAdjustForOrder(warehouseId, dimensionKey, items, sign) {
+    if (!warehouseId || !dimensionKey || !items || !items.length) return;
+    if (!whDataByWarehouse[warehouseId]) whDataByWarehouse[warehouseId] = { products: {}, storeOrder: [] };
+    const whData = whDataByWarehouse[warehouseId];
+    items.forEach(it => {
       const name = it.name;
       if (!whData.products[name]) whData.products[name] = { stores: {}, updatedAt: whNowStamp() };
       if (!whData.products[name].stores) whData.products[name].stores = {};
-      const cur = whData.products[name].stores[partnerName] || 0;
+      const cur = whData.products[name].stores[dimensionKey] || 0;
       const next = Math.max(0, cur + sign * it.qty);
-      if (next === 0) delete whData.products[name].stores[partnerName]; // 0이 되면 그 거래처 칸 자체를 지워요
-      else whData.products[name].stores[partnerName] = next;
+      if (next === 0) delete whData.products[name].stores[dimensionKey];
+      else whData.products[name].stores[dimensionKey] = next;
       whData.products[name].updatedAt = whNowStamp();
-      if (!whData.storeOrder.includes(partnerName)) whData.storeOrder.push(partnerName);
-      // 이 상품이 어느 거래처에도 남은 수량이 없으면, 상품 줄 자체를 표에서 없애요
+      if (!whData.storeOrder.includes(dimensionKey)) whData.storeOrder.push(dimensionKey);
       if (!Object.keys(whData.products[name].stores).length) delete whData.products[name];
     });
-    whSaveData();
+    whSaveData(warehouseId);
   }
 
   function whAddProduct(name, store, qty) {
+    if (!activeWhWarehouseId) { showToast('먼저 창고를 골라주세요.'); return; }
     name = (name || '').trim();
     store = (store || '').trim() || '초기값';
     qty = Math.max(0, Math.round(Number(qty)) || 0);
     if (!name) { showToast('상품명을 입력해주세요.'); return; }
+    const whData = whDataByWarehouse[activeWhWarehouseId] || (whDataByWarehouse[activeWhWarehouseId] = { products: {}, storeOrder: [] });
     if (!whData.products[name]) whData.products[name] = { stores: {}, updatedAt: whNowStamp() };
     if (!whData.products[name].stores) whData.products[name].stores = {};
     whData.products[name].stores[store] = (whData.products[name].stores[store] || 0) + qty;
     if (!whData.storeOrder.includes(store)) whData.storeOrder.push(store);
-    whSaveData();
+    whSaveData(activeWhWarehouseId);
     whRenderStockTable();
     showToast('"' + name + '"을 추가했어요.');
   }
 
   function whRemoveProduct(name, skipConfirm) {
     if (!currentUserIsAdmin) { showToast('삭제는 관리자만 할 수 있어요.'); return; }
+    if (!activeWhWarehouseId) return;
     if (!skipConfirm && !confirm('"' + name + '" 상품을 삭제할까요?')) return;
-    delete whData.products[name];
-    whSaveData();
+    const whData = whDataByWarehouse[activeWhWarehouseId];
+    if (whData) delete whData.products[name];
+    whSaveData(activeWhWarehouseId);
   }
 
   function whMergeStores(fromStore, toStore) {
+    if (!activeWhWarehouseId) return;
     if (!fromStore || !toStore) { showToast('두 거래처를 모두 선택해주세요.'); return; }
     if (fromStore === toStore) { showToast('서로 다른 거래처를 골라주세요.'); return; }
     if (!confirm('"' + fromStore + '"의 수량을 전부 "' + toStore + '"로 합칠까요? "' + fromStore + '"는 사라져요.')) return;
+    const whData = whDataByWarehouse[activeWhWarehouseId];
+    if (!whData) return;
     Object.values(whData.products).forEach(p => {
       if (!p.stores || !(fromStore in p.stores)) return;
       const qty = p.stores[fromStore] || 0;
@@ -1264,7 +1331,7 @@ function startApp(fbConfig) {
       if (qty > 0) { p.stores[toStore] = (p.stores[toStore] || 0) + qty; }
     });
     whData.storeOrder = (whData.storeOrder || []).filter(s => s !== fromStore);
-    whSaveData();
+    whSaveData(activeWhWarehouseId);
     whRenderStockTable();
     showToast('"' + fromStore + '"를 "' + toStore + '"로 합쳤어요.');
   }
@@ -1285,7 +1352,7 @@ function startApp(fbConfig) {
     const opening = box.style.display === 'none';
     box.style.display = opening ? 'block' : 'none';
     if (opening) {
-      const opts = '<option value="">거래처 선택</option>' + whAllStores().map(s => '<option value="' + escapeHtml(s) + '">' + escapeHtml(s) + '</option>').join('');
+      const opts = '<option value="">거래처 선택</option>' + whAllStores(activeWhWarehouseId).map(s => '<option value="' + escapeHtml(s) + '">' + escapeHtml(s) + '</option>').join('');
       document.getElementById('whMergeToSelect').innerHTML = opts;
       document.getElementById('whMergeFromSelect').innerHTML = opts;
     }
@@ -1309,18 +1376,23 @@ function startApp(fbConfig) {
     whSelectedForDelete.clear();
     whDeleteMode = false;
     document.getElementById('whToggleDeleteMode').textContent = '삭제';
-    whSaveData();
+    whSaveData(activeWhWarehouseId);
     whRenderStockTable();
     showToast(names.length + '개 상품을 삭제했어요.');
   });
   document.getElementById('whResetAllBtn').addEventListener('click', () => {
     if (!currentUserIsAdmin) { showToast('초기화는 관리자만 할 수 있어요.'); return; }
-    if (!confirm('미결 현황 전체를 초기화할까요? 되돌릴 수 없어요.')) return;
-    whData = { products: {}, storeOrder: [], log: [] };
-    whSaveData();
+    if (!activeWhWarehouseId) return;
+    const w = warehouses.find(w => w.id === activeWhWarehouseId);
+    if (!confirm('"' + (w ? w.name : '') + '" 창고의 미결 현황을 초기화할까요? 되돌릴 수 없어요.')) return;
+    whDataByWarehouse[activeWhWarehouseId] = { products: {}, storeOrder: [] };
+    whSaveData(activeWhWarehouseId);
     whRenderStockTable();
     showToast('초기화했어요.');
   });
+
+  /* ============ 품목 마스터 관리 ============ */
+
 
   /* ============ 품목 마스터 관리 ============ */
   function readProductFormFields() {
@@ -1897,8 +1969,8 @@ function startApp(fbConfig) {
       logActivity('outbound', 'update', editingOutboundId, summary);
       if (before && before.status === 'done') {
         // 이미 창고이동 완료돼서 미결에 반영돼 있던 건만, 예전 내용은 빼고 새 내용을 다시 더해요.
-        whAdjustForOrder(before.partnerName, before.items, -1);
-        whAdjustForOrder(order.partnerName, order.items, +1);
+        whAdjustForOrder(before.warehouseId, before.promoMonth || before.partnerName, before.items, -1);
+        whAdjustForOrder(before.warehouseId, order.promoMonth || order.partnerName, order.items, +1);
       }
       showToast('출고 내용을 수정했어요.');
       resetRegisterForm();
@@ -1962,7 +2034,7 @@ function startApp(fbConfig) {
     });
     const o = outboundList.find(x => x.id === id);
     logActivity('outbound', 'done', id, (o ? o.partnerName : '') + ' 앞 출고 → "' + whName + '" 창고로 이동 완료');
-    if (o) whAdjustForOrder(o.partnerName, o.items, +1); // 이제 내부망에도 반영됐으니, 그만큼 미결이 생겨요
+    if (o) whAdjustForOrder(warehouseId, o.promoMonth || o.partnerName, o.items, +1); // 이제 내부망에도 반영됐으니, 그만큼 미결이 생겨요
     showToast('"' + whName + '" 창고로 이동 처리했어요.');
   }
 
@@ -1972,7 +2044,7 @@ function startApp(fbConfig) {
     if (!confirm('이 출고 건을 완전히 삭제할까요?\n\n' + (o ? o.partnerName + ' · ' + fmtDateOnly(o.createdAt) : '') + '\n삭제하면 되돌릴 수 없어요.')) return;
     await db.collection('b2bOutbound').doc(id).delete();
     logActivity('outbound', 'delete', id, (o ? o.partnerName + ' · 총액 ' + fmtMoney(o.total) + '원' : ''));
-    if (o && o.status === 'done') whAdjustForOrder(o.partnerName, o.items, -1); // 미결에 반영돼 있던 거면 빼줘요
+    if (o && o.status === 'done') whAdjustForOrder(o.warehouseId, o.promoMonth || o.partnerName, o.items, -1); // 미결에 반영돼 있던 거면 빼줘요
     showToast('출고 건을 삭제했어요.');
   }
 
@@ -1983,7 +2055,7 @@ function startApp(fbConfig) {
     });
     const o = outboundList.find(x => x.id === id);
     logActivity('outbound', 'undone', id, (o ? o.partnerName : '') + ' 앞 출고 창고이동 취소');
-    if (o) whAdjustForOrder(o.partnerName, o.items, -1); // 창고이동이 취소됐으니, 아까 생겼던 미결도 다시 빼요
+    if (o) whAdjustForOrder(o.warehouseId, o.promoMonth || o.partnerName, o.items, -1); // 창고이동이 취소됐으니, 아까 생겼던 미결도 다시 빼요
     showToast('이동완료를 취소했어요.');
   }
 
@@ -2280,7 +2352,7 @@ function startApp(fbConfig) {
           const o = outboundList.find(x => x.id === id);
           await db.collection('b2bOutbound').doc(id).delete();
           logActivity('outbound', 'delete', id, (o ? o.partnerName + ' · 총액 ' + fmtMoney(o.total) + '원' : '') + ' (여러 건 삭제)');
-          if (o && o.status === 'done') whAdjustForOrder(o.partnerName, o.items, -1);
+          if (o && o.status === 'done') whAdjustForOrder(o.warehouseId, o.promoMonth || o.partnerName, o.items, -1);
         }
         showToast(ids.length + '건을 삭제했어요.');
       } catch (e) {
@@ -2369,7 +2441,7 @@ function startApp(fbConfig) {
           });
           const o = outboundList.find(x => x.id === id);
           logActivity('outbound', 'done', id, g.partnerName + ' 앞 출고 → "' + whName + '" 창고로 이동 완료 (모아보기에서 일괄 처리)');
-          if (o) whAdjustForOrder(o.partnerName, o.items, +1);
+          if (o) whAdjustForOrder(warehouseId, o.promoMonth || o.partnerName, o.items, +1);
         }
         showToast('"' + g.partnerName + '" 완료 처리했어요.');
         showTransferSummary();
@@ -2728,7 +2800,7 @@ function startApp(fbConfig) {
       await db.collection('b2bOutbound').doc(id).update({
         salesProcessed: true, salesProcessedAt: firebase.firestore.FieldValue.serverTimestamp(), salesProcessedBy: auth.currentUser.email
       });
-      if (o) whAdjustForOrder(o.partnerName, o.items, -1);
+      if (o) whAdjustForOrder(o.warehouseId, o.promoMonth || o.partnerName, o.items, -1);
     }
     showToast(outboundIds.size + '건을 매출처리했어요.');
     ledgerBulkMode = false;
@@ -2742,7 +2814,7 @@ function startApp(fbConfig) {
     await db.collection('b2bOutbound').doc(outboundId).update({
       salesProcessed: true, salesProcessedAt: firebase.firestore.FieldValue.serverTimestamp(), salesProcessedBy: auth.currentUser.email
     });
-    if (o) whAdjustForOrder(o.partnerName, o.items, -1); // 매출처리까지 끝났으니 미결에서도 빠져요
+    if (o) whAdjustForOrder(o.warehouseId, o.promoMonth || o.partnerName, o.items, -1); // 매출처리까지 끝났으니 미결에서도 빠져요
     showToast('매출처리 완료로 표시했어요.');
   }
   ['ledgerFilterFrom','ledgerFilterTo','ledgerFilterPartner','ledgerFilterProduct'].forEach(id => {
@@ -2773,6 +2845,7 @@ function startApp(fbConfig) {
   /* ============ 홍보품 처리 ============ */
   const PROMO_PARTNER_NAME = '홍보품';
   function promoMonthOf(dateStr) { return (dateStr || '').slice(0, 7); }
+  function promoWarehouse() { return warehouses.find(w => w.type === 'promo'); }
 
   document.getElementById('promoDateInput').value = fmtDateOnly(new Date());
   document.getElementById('promoProductInput').addEventListener('change', () => {
@@ -2795,6 +2868,8 @@ function startApp(fbConfig) {
   }
 
   document.getElementById('promoAddBtn').addEventListener('click', async () => {
+    const whPromo = promoWarehouse();
+    if (!whPromo) { showToast('먼저 "창고 등록" 탭에서 종류가 "홍보품 창고"인 창고를 하나 등록해주세요.'); return; }
     const dateStr = document.getElementById('promoDateInput').value;
     const name = document.getElementById('promoProductInput').value.trim();
     const spec = document.getElementById('promoSpecInput').value.trim();
@@ -2821,12 +2896,12 @@ function startApp(fbConfig) {
         invoicePartnerName: c.name || '', invoicePartnerBizNo: c.bizNo || '', invoicePartnerCeo: c.ceo || '', invoicePartnerAddress: c.address || '',
         shipTo: '', receiver: '', receiverPhone: '', shipAddress: '',
         items: [newItem], subtotal: totals.subtotal, vat: totals.vat, total: totals.total,
-        status: 'done', promoMonth: month,
+        status: 'done', promoMonth: month, warehouseId: whPromo.id, warehouseName: whPromo.name,
         createdAt: firebase.firestore.FieldValue.serverTimestamp(), createdBy: auth.currentUser.email,
         completedAt: firebase.firestore.FieldValue.serverTimestamp(), completedBy: auth.currentUser.email
       });
     }
-    whAdjustForOrder(PROMO_PARTNER_NAME, [newItem], +1);
+    whAdjustForOrder(whPromo.id, month, [newItem], +1);
     logActivity('outbound', 'create', null, '홍보품 사용 등록: ' + name + ' ' + qty + '개 (' + dateStr + ')');
     document.getElementById('promoProductInput').value = '';
     document.getElementById('promoSpecInput').value = '';
@@ -2850,8 +2925,11 @@ function startApp(fbConfig) {
     const oldItem = newItems[idx];
     const updatedItem = { ...oldItem, qty: newQty, price: newPrice, amount: newQty * newPrice, itemDate: dateStr };
     newItems[idx] = updatedItem;
-    whAdjustForOrder(PROMO_PARTNER_NAME, [oldItem], -1);
-    whAdjustForOrder(PROMO_PARTNER_NAME, [updatedItem], +1);
+    const whPromo = promoWarehouse();
+    if (whPromo) {
+      whAdjustForOrder(whPromo.id, promoMonthOf(oldItem.itemDate), [oldItem], -1);
+      whAdjustForOrder(whPromo.id, promoMonthOf(updatedItem.itemDate), [updatedItem], +1);
+    }
     const totals = computeTotals(newItems);
     await db.collection('b2bOutbound').doc(orderId).update({ items: newItems, subtotal: totals.subtotal, vat: totals.vat, total: totals.total });
     logActivity('outbound', 'update', orderId, '홍보품 내역 수정: ' + updatedItem.name);
@@ -2867,7 +2945,8 @@ function startApp(fbConfig) {
     if (!confirm('"' + order.items[idx].name + '" 항목을 삭제할까요?')) return;
     const removed = order.items[idx];
     const newItems = order.items.filter((_, i) => i !== idx);
-    whAdjustForOrder(PROMO_PARTNER_NAME, [removed], -1);
+    const whPromo = promoWarehouse();
+    if (whPromo) whAdjustForOrder(whPromo.id, promoMonthOf(removed.itemDate), [removed], -1);
     if (!newItems.length) {
       await db.collection('b2bOutbound').doc(orderId).delete();
     } else {
