@@ -1037,7 +1037,7 @@ function startApp(fbConfig) {
       bankInfo: document.getElementById('companyBankInfoInput').value.trim()
     };
     const before = company;
-    await db.collection('settings').doc('company').set(after);
+    await db.collection('settings').doc('company').set(after, { merge: true });
     const summary = diffSummary(
       { name: '상호', bizNo: '등록번호', ceo: '대표자', address: '주소', phone: '연락처', bankInfo: '비고' },
       before, after
