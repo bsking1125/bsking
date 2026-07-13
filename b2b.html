@@ -3038,13 +3038,37 @@ function startApp(fbConfig) {
     area.querySelectorAll('[data-save-promo]').forEach(btn => btn.addEventListener('click', () => savePromoInlineEdit(btn.dataset.savePromo)));
   }
 
-  document.getElementById('promoPrintBtn').addEventListener('click', () => {
+  // 같은 제품명(+규격)은 하나로 합쳐서 수량만 더해요. 달이 다르면 안 섞이게, 달별로 나눠서 합쳐요.
+  function getMergedPromoItemsByMonth() {
     const items = getOpenPromoItems();
-    if (!items.length) { showToast('출력할 내역이 없어요.'); return; }
+    const byMonth = {};
+    items.forEach(it => {
+      const m = promoMonthOf(it.itemDate) || '날짜 없음';
+      if (!byMonth[m]) byMonth[m] = {};
+      const key = it.name + '||' + (it.spec || '');
+      if (!byMonth[m][key]) byMonth[m][key] = { name: it.name, spec: it.spec, qty: 0, amount: 0, note: '' };
+      byMonth[m][key].qty += it.qty;
+      byMonth[m][key].amount += it.amount;
+    });
+    const result = {};
+    Object.keys(byMonth).forEach(m => {
+      result[m] = Object.values(byMonth[m]).map(it => ({ ...it, price: it.qty ? Math.round(it.amount / it.qty) : 0 }));
+    });
+    return result;
+  }
+
+  document.getElementById('promoPrintBtn').addEventListener('click', () => {
+    const byMonth = getMergedPromoItemsByMonth();
+    const months = Object.keys(byMonth).sort();
+    if (!months.length) { showToast('출력할 내역이 없어요.'); return; }
     const baseOrder = outboundList.find(o => o.partnerName === PROMO_PARTNER_NAME && !o.salesProcessed);
-    const chunks = [];
-    for (let i = 0; i < items.length; i += INVOICE_MAX_ITEM_ROWS) chunks.push(items.slice(i, i + INVOICE_MAX_ITEM_ROWS));
-    const virtualOrders = chunks.map(chunk => ({ ...baseOrder, items: chunk, createdAt: new Date() }));
+    const virtualOrders = [];
+    months.forEach(m => {
+      const merged = byMonth[m];
+      for (let i = 0; i < merged.length; i += INVOICE_MAX_ITEM_ROWS) {
+        virtualOrders.push({ ...baseOrder, items: merged.slice(i, i + INVOICE_MAX_ITEM_ROWS), promoMonth: m, createdAt: new Date() });
+      }
+    });
     const html = virtualOrders.map((o, i) => {
       const sheetHtml = buildInvoiceSheetHtml(o);
       return '<div style="' + (i < virtualOrders.length - 1 ? 'page-break-after: always;' : '') + '">' + sheetHtml + '</div>';
@@ -3055,12 +3079,17 @@ function startApp(fbConfig) {
   });
 
   document.getElementById('promoExcelBtn').addEventListener('click', async () => {
-    const items = getOpenPromoItems();
-    if (!items.length) { showToast('내보낼 내역이 없어요.'); return; }
+    const byMonth = getMergedPromoItemsByMonth();
+    const months = Object.keys(byMonth).sort();
+    if (!months.length) { showToast('내보낼 내역이 없어요.'); return; }
     const baseOrder = outboundList.find(o => o.partnerName === PROMO_PARTNER_NAME && !o.salesProcessed);
-    const chunks = [];
-    for (let i = 0; i < items.length; i += INVOICE_MAX_ITEM_ROWS) chunks.push(items.slice(i, i + INVOICE_MAX_ITEM_ROWS));
-    const virtualOrders = chunks.map(chunk => ({ ...baseOrder, items: chunk, createdAt: new Date() }));
+    const virtualOrders = [];
+    months.forEach(m => {
+      const merged = byMonth[m];
+      for (let i = 0; i < merged.length; i += INVOICE_MAX_ITEM_ROWS) {
+        virtualOrders.push({ ...baseOrder, items: merged.slice(i, i + INVOICE_MAX_ITEM_ROWS), promoMonth: m, createdAt: new Date() });
+      }
+    });
     showToast('엑셀로 묶는 중이에요...');
     const zip = new JSZip();
     try {
