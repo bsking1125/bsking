@@ -1262,6 +1262,7 @@ function startApp(fbConfig) {
     const storeListEl = document.getElementById('whStoreList');
     if (storeListEl) storeListEl.innerHTML = stores.map(s => '<option value="' + escapeHtml(s) + '">').join('');
     document.getElementById('whAdminBar').style.display = currentUserIsAdmin ? 'flex' : 'none';
+    whUpdateDeleteBar();
   }
 
   function whUpdateDeleteBar() {
@@ -2755,10 +2756,10 @@ function startApp(fbConfig) {
           renderLedger();
         });
       }
-      updateLedgerBulkBar(rows);
     } else {
       area.querySelectorAll('[data-sales-processed]').forEach(btn => btn.addEventListener('click', () => markSalesProcessed(btn.dataset.salesProcessed)));
     }
+    updateLedgerBulkBar(rows);
   }
 
   function updateLedgerBulkBar(rows) {
