@@ -412,6 +412,7 @@
       </div>
     </div>
     <div class="table-scroll" id="promoListArea"></div>
+    <div id="promoTotals" style="display:none; text-align:right; font-size:14px; font-weight:700; padding:10px 4px; border-top:1px solid var(--line); margin-top:-1px;"></div>
   </div>
 
   <!-- 품목 관리 -->
@@ -2960,6 +2961,7 @@ function startApp(fbConfig) {
   function renderPromoList() {
     const area = document.getElementById('promoListArea');
     if (!area) return;
+    const totalsEl = document.getElementById('promoTotals');
     const listEl = document.getElementById('promoProductList');
     if (listEl) listEl.innerHTML = productMaster.map(p => '<option value="' + escapeHtml(p.name) + '">').join('');
     const items = getOpenPromoItems();
@@ -2967,9 +2969,16 @@ function startApp(fbConfig) {
     if (!items.length) {
       if (descEl) descEl.textContent = '아직 입력된 게 없어요.';
       area.innerHTML = '<div class="empty">아직 입력된 홍보품 사용 내역이 없어요.</div>';
+      if (totalsEl) totalsEl.style.display = 'none';
       return;
     }
     if (descEl) descEl.textContent = '지금까지 ' + items.length + '건 · 가장 최근 입력일: ' + (items[items.length - 1].itemDate || '-');
+    if (totalsEl) {
+      const totalQty = items.reduce((s, it) => s + it.qty, 0);
+      const totalAmount = items.reduce((s, it) => s + it.amount, 0);
+      totalsEl.style.display = 'block';
+      totalsEl.textContent = '합계 : 수량 ' + totalQty + '개  금액 ' + fmtMoney(totalAmount) + '원';
+    }
     let html = '<table><thead><tr><th>월일</th><th>제품명</th><th>규격</th><th class="num">수량</th><th class="num">단가</th><th class="num">금액</th><th></th></tr></thead><tbody>';
     items.forEach(it => {
       const key = it.orderId + '||' + it.idx;
