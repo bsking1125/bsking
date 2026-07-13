@@ -2301,7 +2301,7 @@ function startApp(fbConfig) {
         const sender = c.name ? (c.name + (o.shipAddress ? ' ' + o.shipAddress : '')) : (o.shipAddress || '');
         const count = Math.max(1, Math.round(Number(shippingCounts[o.id])) || 1);
         for (let i = 0; i < count; i++) {
-          const itemTextWithMark = count > 1 ? itemText + ' @' + (i + 1) : itemText;
+          const itemTextWithMark = count > 1 ? itemText + ' @' : itemText;
           aoa.push([o.shipTo || '', o.receiverPhone || '', o.receiver || '', itemTextWithMark, sender]);
         }
       });

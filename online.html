@@ -1877,7 +1877,7 @@ document.getElementById('invoiceExportBtn').addEventListener('click', async () =
   invoiceRows.forEach(r => {
     const count = Math.max(1, Math.round(Number(r.count)) || 1);
     for (let i = 0; i < count; i++) {
-      const itemTextWithMark = count > 1 ? r.item + ' @' + (i + 1) : r.item;
+      const itemTextWithMark = count > 1 ? r.item + ' @' : r.item;
       aoa.push([r.recipient, r.phone, r.address, itemTextWithMark, r.sender]);
     }
   });
