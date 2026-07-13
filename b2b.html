@@ -2043,7 +2043,7 @@ function startApp(fbConfig) {
   async function removeOutbound(id) {
     if (!currentUserIsAdmin) { showToast('삭제는 관리자만 할 수 있어요.'); return; }
     const o = outboundList.find(x => x.id === id);
-    if (!confirm('이 출고 건을 완전히 삭제할까요?\n\n' + (o ? o.partnerName + ' · ' + fmtDateOnly(o.createdAt) : '') + '\n삭제하면 되돌릴 수 없어요.')) return;
+    if (!confirm('이 출고 건을 완전히 삭제할까요?\n\n' + (o ? o.partnerName + ' · ' + (o.promoMonth ? o.promoMonth + ' 몫' : fmtDateOnly(o.createdAt)) : '') + '\n삭제하면 되돌릴 수 없어요.')) return;
     await db.collection('b2bOutbound').doc(id).delete();
     logActivity('outbound', 'delete', id, (o ? o.partnerName + ' · 총액 ' + fmtMoney(o.total) + '원' : ''));
     if (o && o.status === 'done') whAdjustForOrder(o.warehouseId, o.promoMonth || o.partnerName, o.items, -1); // 미결에 반영돼 있던 거면 빼줘요
@@ -2650,7 +2650,7 @@ function startApp(fbConfig) {
         : '';
       const checkboxTd = outboundBulkMode ? '<td><input type="checkbox" class="outbound-check" data-id="' + o.id + '" ' + (outboundSelectedIds.has(o.id) ? 'checked' : '') + '></td>' : '';
       html += '<tr>' + checkboxTd +
-        '<td>' + fmtDateOnly(o.createdAt) + '</td><td class="prod-name">' + escapeHtml(o.partnerName) + '</td>' +
+        '<td>' + (o.promoMonth ? escapeHtml(o.promoMonth) + ' 몫' : fmtDateOnly(o.createdAt)) + '</td><td class="prod-name">' + escapeHtml(o.partnerName) + '</td>' +
         '<td>' + itemCount + '건</td><td class="num">' + fmtMoney(o.total) + '</td>' +
         '<td><div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:36px;"><span style="color:' + (o.status === 'done' ? 'var(--primary-dark)' : 'var(--red)') + '; font-weight:700;">' + (o.status === 'done' ? '이동완료' : '이동대기') + '</span>' + statusExtra + '</div></td>' +
         '<td>' + (o.status === 'done'
@@ -2850,6 +2850,7 @@ function startApp(fbConfig) {
   function promoWarehouse() { return warehouses.find(w => w.type === 'promo'); }
 
   document.getElementById('promoDateInput').value = fmtDateOnly(new Date());
+  document.getElementById('promoDateInput').max = fmtDateOnly(new Date());
   document.getElementById('promoProductInput').addEventListener('change', () => {
     const name = document.getElementById('promoProductInput').value.trim();
     const p = productMaster.find(x => x.name === name);
@@ -2878,6 +2879,7 @@ function startApp(fbConfig) {
     const qty = Math.round(Number(document.getElementById('promoQtyInput').value)) || 0;
     const price = parseMoneyInputValue(document.getElementById('promoPriceInput').value);
     if (!dateStr) { showToast('월일을 선택해주세요.'); return; }
+    if (dateStr > fmtDateOnly(new Date())) { showToast('오늘보다 나중 날짜는 등록할 수 없어요.'); return; }
     if (!name) { showToast('제품명을 입력해주세요.'); return; }
     if (qty <= 0) { showToast('수량은 1 이상이어야 해요.'); return; }
 
@@ -2922,6 +2924,7 @@ function startApp(fbConfig) {
     const newQty = Math.round(Number(document.getElementById('editPromo_qty').value)) || 0;
     const newPrice = parseMoneyInputValue(document.getElementById('editPromo_price').value);
     if (!dateStr) { showToast('월일을 선택해주세요.'); return; }
+    if (dateStr > fmtDateOnly(new Date())) { showToast('오늘보다 나중 날짜는 등록할 수 없어요.'); return; }
     if (newQty <= 0) { showToast('수량은 1 이상이어야 해요.'); return; }
     const newItems = [...order.items];
     const oldItem = newItems[idx];
@@ -2974,30 +2977,45 @@ function startApp(fbConfig) {
       return;
     }
     if (descEl) descEl.textContent = '지금까지 ' + items.length + '건 · 가장 최근 입력일: ' + (items[items.length - 1].itemDate || '-');
-    if (totalsEl) {
-      const totalQty = items.reduce((s, it) => s + it.qty, 0);
-      const totalAmount = items.reduce((s, it) => s + it.amount, 0);
-      totalsEl.style.display = 'block';
-      totalsEl.textContent = '합계 : 수량 ' + totalQty + '개  금액 ' + fmtMoney(totalAmount) + '원';
-    }
-    let html = '<table><thead><tr><th>월일</th><th>제품명</th><th>규격</th><th class="num">수량</th><th class="num">단가</th><th class="num">금액</th><th></th></tr></thead><tbody>';
+    if (totalsEl) totalsEl.style.display = 'none'; // 월별로 나눠 보여주니, 전체 합계는 따로 안 보여줘요
+
+    // 월별로 나눠서, 달마다 따로 표+합계를 보여줘요 (예전 달을 깜빡하고 아직 매출처리 안 했어도 안 섞여 보이게요)
+    const byMonth = {};
     items.forEach(it => {
-      const key = it.orderId + '||' + it.idx;
-      if (editingPromoKey === key) {
-        html += '<tr>' +
-          '<td><input type="date" id="editPromo_date" value="' + escapeHtml(it.itemDate||'') + '" style="width:130px;"></td>' +
-          '<td class="prod-name">' + escapeHtml(it.name) + '</td><td>' + escapeHtml(it.spec||'-') + '</td>' +
-          '<td><input type="number" id="editPromo_qty" class="qty" value="' + it.qty + '" style="width:70px;"></td>' +
-          '<td><input type="text" inputmode="numeric" class="money-input" id="editPromo_price" value="' + it.price + '" style="width:90px;"></td>' +
-          '<td class="num">-</td>' +
-          '<td class="row-actions"><button data-save-promo="' + key + '" style="color:var(--primary-dark); font-weight:700;">저장</button> <button data-cancel-edit-promo>취소</button></td></tr>';
-      } else {
-        html += '<tr><td>' + escapeHtml(it.itemDate || '-') + '</td><td class="prod-name">' + escapeHtml(it.name) + '</td><td>' + escapeHtml(it.spec||'-') + '</td>' +
-          '<td class="num">' + it.qty + '</td><td class="num">' + fmtMoney(it.price) + '</td><td class="num">' + fmtMoney(it.amount) + '</td>' +
-          '<td class="row-actions"><button data-promo-edit="' + key + '">수정</button> <button data-promo-remove="' + key + '" style="color:var(--red);">삭제</button></td></tr>';
-      }
+      const m = promoMonthOf(it.itemDate) || '날짜 없음';
+      if (!byMonth[m]) byMonth[m] = [];
+      byMonth[m].push(it);
     });
-    html += '</tbody></table>';
+    const months = Object.keys(byMonth).sort();
+
+    let html = '';
+    months.forEach(m => {
+      const monthItems = byMonth[m];
+      const monthQty = monthItems.reduce((s, it) => s + it.qty, 0);
+      const monthAmount = monthItems.reduce((s, it) => s + it.amount, 0);
+      html += '<div style="margin-bottom:24px;">' +
+        '<h3 style="font-size:15px; margin-bottom:8px;">' + escapeHtml(m) + '</h3>' +
+        '<table><thead><tr><th>월일</th><th>제품명</th><th>규격</th><th class="num">수량</th><th class="num">단가</th><th class="num">금액</th><th></th></tr></thead><tbody>';
+      monthItems.forEach(it => {
+        const key = it.orderId + '||' + it.idx;
+        if (editingPromoKey === key) {
+          html += '<tr>' +
+            '<td><input type="date" id="editPromo_date" value="' + escapeHtml(it.itemDate||'') + '" max="' + fmtDateOnly(new Date()) + '" style="width:130px;"></td>' +
+            '<td class="prod-name">' + escapeHtml(it.name) + '</td><td>' + escapeHtml(it.spec||'-') + '</td>' +
+            '<td><input type="number" id="editPromo_qty" class="qty" value="' + it.qty + '" style="width:70px;"></td>' +
+            '<td><input type="text" inputmode="numeric" class="money-input" id="editPromo_price" value="' + it.price + '" style="width:90px;"></td>' +
+            '<td class="num">-</td>' +
+            '<td class="row-actions"><button data-save-promo="' + key + '" style="color:var(--primary-dark); font-weight:700;">저장</button> <button data-cancel-edit-promo>취소</button></td></tr>';
+        } else {
+          html += '<tr><td>' + escapeHtml(it.itemDate || '-') + '</td><td class="prod-name">' + escapeHtml(it.name) + '</td><td>' + escapeHtml(it.spec||'-') + '</td>' +
+            '<td class="num">' + it.qty + '</td><td class="num">' + fmtMoney(it.price) + '</td><td class="num">' + fmtMoney(it.amount) + '</td>' +
+            '<td class="row-actions"><button data-promo-edit="' + key + '">수정</button> <button data-promo-remove="' + key + '" style="color:var(--red);">삭제</button></td></tr>';
+        }
+      });
+      html += '</tbody></table>' +
+        '<div style="text-align:right; font-size:14px; font-weight:700; padding:10px 4px; border-top:1px solid var(--line);">합계 : 수량 ' + monthQty + '개  금액 ' + fmtMoney(monthAmount) + '원</div>' +
+        '</div>';
+    });
     area.innerHTML = html;
     area.querySelectorAll('[data-promo-edit]').forEach(btn => btn.addEventListener('click', () => { editingPromoKey = btn.dataset.promoEdit; renderPromoList(); }));
     area.querySelectorAll('[data-promo-remove]').forEach(btn => btn.addEventListener('click', () => removePromoItem(btn.dataset.promoRemove)));
