@@ -1806,6 +1806,7 @@ function startApp(fbConfig) {
 
   let editingOutboundId = null;
   let outboundSelectedIds = new Set();
+  let shippingCounts = {}; // { 출고id: 송장 몇 장 뽑을지 } — 송장 출력 모드에서만 써요
   let outboundBulkMode = null; // null | 'print' | 'excel' | 'delete' | 'edit' | 'shipping'
 
   /* ============ 송장 엑셀 저장 폴더 지정 ============ */
@@ -2261,6 +2262,7 @@ function startApp(fbConfig) {
   function enterOutboundBulkMode(mode) {
     outboundBulkMode = mode;
     outboundSelectedIds.clear();
+    shippingCounts = {};
     renderOutboundList();
   }
   document.getElementById('bulkPrintInvoiceBtn').addEventListener('click', () => enterOutboundBulkMode('print'));
@@ -2271,6 +2273,7 @@ function startApp(fbConfig) {
   document.getElementById('bulkClearSelectionBtn').addEventListener('click', () => {
     outboundBulkMode = null;
     outboundSelectedIds.clear();
+    shippingCounts = {};
     renderOutboundList();
   });
 
@@ -2296,7 +2299,10 @@ function startApp(fbConfig) {
       orders.forEach(o => {
         const itemText = (o.items || []).map(it => it.name + ' ' + it.qty).join(', ');
         const sender = c.name ? (c.name + (o.shipAddress ? ' ' + o.shipAddress : '')) : (o.shipAddress || '');
-        aoa.push([o.shipTo || '', o.receiverPhone || '', o.receiver || '', itemText, sender]);
+        const count = Math.max(1, Math.round(Number(shippingCounts[o.id])) || 1);
+        for (let i = 0; i < count; i++) {
+          aoa.push([o.shipTo || '', o.receiverPhone || '', o.receiver || '', itemText, sender]);
+        }
       });
       const ws = XLSX.utils.aoa_to_sheet(aoa);
       ws['!cols'] = [{wch:10},{wch:14},{wch:40},{wch:30},{wch:20}];
@@ -2363,6 +2369,7 @@ function startApp(fbConfig) {
     }
     outboundBulkMode = null;
     outboundSelectedIds.clear();
+    shippingCounts = {};
     renderOutboundList();
   });
 
@@ -2642,14 +2649,16 @@ function startApp(fbConfig) {
     if (!filtered.length) { area.innerHTML = '<div class="empty">해당하는 출고 내역이 없어요.</div>'; updateOutboundBulkBar(); return; }
 
     const checkboxTh = outboundBulkMode ? '<th style="width:34px;"><input type="checkbox" id="outboundSelectAll"></th>' : '';
-    let html = '<table style="white-space:nowrap;"><thead><tr>' + checkboxTh + '<th>날짜</th><th>거래처</th><th>품목수</th><th class="num">총액</th><th>상태</th><th>창고</th></tr></thead><tbody>';
+    const shippingTh = outboundBulkMode === 'shipping' ? '<th style="width:90px;">송장 수량</th>' : '';
+    let html = '<table style="white-space:nowrap;"><thead><tr>' + checkboxTh + shippingTh + '<th>날짜</th><th>거래처</th><th>품목수</th><th class="num">총액</th><th>상태</th><th>창고</th></tr></thead><tbody>';
     filtered.forEach(o => {
       const itemCount = (o.items || []).length;
       const statusExtra = o.status === 'done' && o.completedBy
         ? '<div style="font-size:11px; color:var(--ink-soft); margin-top:2px;">' + escapeHtml(o.completedBy) + ' · ' + fmtDate(o.completedAt) + '</div>'
         : '';
       const checkboxTd = outboundBulkMode ? '<td><input type="checkbox" class="outbound-check" data-id="' + o.id + '" ' + (outboundSelectedIds.has(o.id) ? 'checked' : '') + '></td>' : '';
-      html += '<tr>' + checkboxTd +
+      const shippingTd = outboundBulkMode === 'shipping' ? '<td><input type="number" class="qty shipping-count-input" data-id="' + o.id + '" min="1" value="' + (shippingCounts[o.id] || 1) + '" style="width:60px;"></td>' : '';
+      html += '<tr>' + checkboxTd + shippingTd +
         '<td>' + (o.promoMonth ? escapeHtml(o.promoMonth) + ' 몫' : fmtDateOnly(o.createdAt)) + '</td><td class="prod-name">' + escapeHtml(o.partnerName) + '</td>' +
         '<td>' + itemCount + '건</td><td class="num">' + fmtMoney(o.total) + '</td>' +
         '<td><div style="display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:36px;"><span style="color:' + (o.status === 'done' ? 'var(--primary-dark)' : 'var(--red)') + '; font-weight:700;">' + (o.status === 'done' ? '이동완료' : '이동대기') + '</span>' + statusExtra + '</div></td>' +
@@ -2666,6 +2675,11 @@ function startApp(fbConfig) {
     });
     html += '</tbody></table>';
     area.innerHTML = html;
+    area.querySelectorAll('.shipping-count-input').forEach(inp => {
+      inp.addEventListener('input', () => {
+        shippingCounts[inp.dataset.id] = Math.max(1, Math.round(Number(inp.value)) || 1);
+      });
+    });
     area.querySelectorAll('.outbound-check').forEach(cb => {
       cb.addEventListener('change', () => {
         if (cb.checked) outboundSelectedIds.add(cb.dataset.id); else outboundSelectedIds.delete(cb.dataset.id);
