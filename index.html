@@ -1057,29 +1057,6 @@ function startApp(fbConfig) {
     showToast('"' + name + '" 거래처를 등록했어요.');
   });
 
-  async function editPartner(id) {
-    const p = partners.find(p => p.id === id);
-    if (!p) return;
-    const ask = (label, cur) => { const v = prompt(label, cur || ''); return v; };
-    const name = ask('거래처명', p.name); if (name === null) return;
-    const bizNo = ask('등록번호(사업자번호)', p.bizNo); if (bizNo === null) return;
-    const ceo = ask('대표자', p.ceo); if (ceo === null) return;
-    const address = ask('주소', p.address); if (address === null) return;
-    const contact = ask('검수자', p.contact); if (contact === null) return;
-    const shipTo = ask('받는사람', p.shipTo); if (shipTo === null) return;
-    const receiver = ask('받는사람 주소', p.receiver); if (receiver === null) return;
-    const receiverPhone = ask('받는사람 번호', p.receiverPhone); if (receiverPhone === null) return;
-    const shipAddress = ask('비고', p.shipAddress); if (shipAddress === null) return;
-    const after = { name: name.trim() || p.name, bizNo, ceo, address, contact, shipTo, receiver, receiverPhone, shipAddress };
-    await db.collection('partners').doc(id).update(after);
-    const summary = diffSummary(
-      { name: '거래처명', bizNo: '등록번호', ceo: '대표자', address: '주소', contact: '검수자', shipTo: '받는사람', receiver: '받는사람 주소', receiverPhone: '받는사람 번호', shipAddress: '비고' },
-      p, after
-    );
-    logActivity('partner', 'update', id, summary);
-    showToast('거래처 정보를 수정했어요.');
-  }
-
   async function removePartner(id) {
     if (!currentUserIsAdmin) { showToast('삭제는 관리자만 할 수 있어요.'); return; }
     const name = partnerName(id);
@@ -1412,36 +1389,6 @@ function startApp(fbConfig) {
     ['productNameInput','productSpecInput','productBarcodeInput','productBoxQtyInput','productConsumerPriceInput','productMemberPriceInput','productDistPriceInput','productSpecialDistPriceInput'].forEach(id => document.getElementById(id).value = '');
     showToast('"' + f.name + '" 품목을 등록했어요.');
   });
-
-  async function editProductMaster(id) {
-    const p = productMaster.find(p => p.id === id);
-    if (!p) return;
-    const ask = (label, cur) => prompt(label, cur !== undefined && cur !== null ? cur : '');
-    const name = ask('품목명', p.name); if (name === null) return;
-    const spec = ask('규격', p.spec || ''); if (spec === null) return;
-    const barcode = ask('바코드', p.barcode || ''); if (barcode === null) return;
-    const unitsPerBox = ask('박스입수량', p.unitsPerBox || 0); if (unitsPerBox === null) return;
-    const consumerPrice = ask('소비자가', p.consumerPrice || 0); if (consumerPrice === null) return;
-    const memberPrice = ask('조합원가', p.memberPrice || 0); if (memberPrice === null) return;
-    const distributorPrice = ask('대리점가', p.distributorPrice || 0); if (distributorPrice === null) return;
-    const specialDistributorPrice = ask('특판대리점가', p.specialDistributorPrice || 0); if (specialDistributorPrice === null) return;
-    const after = {
-      name: name.trim() || p.name, spec, barcode,
-      unitsPerBox: Math.round(Number(unitsPerBox)) || 0,
-      consumerPrice: parseMoneyInputValue(consumerPrice),
-      memberPrice: parseMoneyInputValue(memberPrice),
-      distributorPrice: parseMoneyInputValue(distributorPrice),
-      specialDistributorPrice: parseMoneyInputValue(specialDistributorPrice)
-    };
-    after.defaultPrice = after.distributorPrice || after.consumerPrice || 0;
-    await db.collection('products').doc(id).update(after);
-    const summary = diffSummary(
-      { name: '품목명', spec: '규격', barcode: '바코드', unitsPerBox: '박스입수량', consumerPrice: '소비자가', memberPrice: '조합원가', distributorPrice: '대리점가', specialDistributorPrice: '특판대리점가' },
-      p, after
-    );
-    logActivity('product', 'update', id, summary);
-    showToast('품목 정보를 수정했어요.');
-  }
 
   async function removeProductMaster(id) {
     if (!currentUserIsAdmin) { showToast('삭제는 관리자만 할 수 있어요.'); return; }
@@ -2463,37 +2410,127 @@ function startApp(fbConfig) {
   });
   document.getElementById('openTransferSummaryBtn').addEventListener('click', showTransferSummary);
 
+  let editingPartnerId = null;
   function renderPartnerList() {
     const area = document.getElementById('partnerListArea');
     const list = orderedPartners();
     if (!list.length) { area.innerHTML = '<div class="empty">아직 등록된 거래처가 없어요.</div>'; return; }
     let html = '<table><thead><tr><th>거래처명</th><th>등록번호</th><th>대표자</th><th>주소</th><th>검수자</th><th></th></tr></thead><tbody>';
     list.forEach(p => {
-      html += '<tr><td class="prod-name">' + escapeHtml(p.name) + '</td><td>' + escapeHtml(p.bizNo||'-') + '</td><td>' + escapeHtml(p.ceo||'-') + '</td><td>' + escapeHtml(p.address||'-') + '</td><td>' + escapeHtml(p.contact||'-') + '</td>' +
-        '<td class="row-actions"><button data-edit-partner="' + p.id + '">수정</button>' + (currentUserIsAdmin ? ' <button data-remove-partner="' + p.id + '">삭제</button>' : '') + '</td></tr>';
+      if (editingPartnerId === p.id) {
+        html += '<tr><td colspan="6" style="text-align:left; background:var(--bg);"><div class="add-row">' +
+          '<div class="field" style="flex:1; min-width:140px;"><label>거래처명</label><input type="text" id="editPartner_name" value="' + escapeHtml(p.name||'') + '"></div>' +
+          '<div class="field" style="flex:1; min-width:140px;"><label>등록번호</label><input type="text" id="editPartner_bizNo" value="' + escapeHtml(p.bizNo||'') + '"></div>' +
+          '<div class="field" style="flex:1; min-width:120px;"><label>대표자</label><input type="text" id="editPartner_ceo" value="' + escapeHtml(p.ceo||'') + '"></div>' +
+          '</div><div class="add-row">' +
+          '<div class="field" style="flex:2; min-width:220px;"><label>주소</label><input type="text" id="editPartner_address" value="' + escapeHtml(p.address||'') + '"></div>' +
+          '<div class="field" style="flex:1; min-width:120px;"><label>검수자</label><input type="text" id="editPartner_contact" value="' + escapeHtml(p.contact||'') + '"></div>' +
+          '</div><div class="add-row">' +
+          '<div class="field" style="flex:1; min-width:140px;"><label>받는사람</label><input type="text" id="editPartner_shipTo" value="' + escapeHtml(p.shipTo||'') + '"></div>' +
+          '<div class="field" style="flex:1; min-width:140px;"><label>받는사람 번호</label><input type="text" id="editPartner_receiverPhone" value="' + escapeHtml(p.receiverPhone||'') + '"></div>' +
+          '</div><div class="add-row">' +
+          '<div class="field" style="flex:1; min-width:160px;"><label>받는사람 주소</label><input type="text" id="editPartner_receiver" value="' + escapeHtml(p.receiver||'') + '"></div>' +
+          '<div class="field" style="flex:1; min-width:160px;"><label>비고</label><input type="text" id="editPartner_shipAddress" value="' + escapeHtml(p.shipAddress||'') + '"></div>' +
+          '</div><div style="display:flex; gap:8px; margin-top:6px;"><button class="primary-btn" data-save-partner="' + p.id + '" style="flex:none; padding:8px 16px;">저장</button><button class="ghost-btn" data-cancel-edit-partner style="flex:none; padding:8px 16px;">취소</button></div>' +
+          '</td></tr>';
+      } else {
+        html += '<tr><td class="prod-name">' + escapeHtml(p.name) + '</td><td>' + escapeHtml(p.bizNo||'-') + '</td><td>' + escapeHtml(p.ceo||'-') + '</td><td>' + escapeHtml(p.address||'-') + '</td><td>' + escapeHtml(p.contact||'-') + '</td>' +
+          '<td class="row-actions"><button data-edit-partner="' + p.id + '">수정</button>' + (currentUserIsAdmin ? ' <button data-remove-partner="' + p.id + '">삭제</button>' : '') + '</td></tr>';
+      }
     });
     html += '</tbody></table>';
     area.innerHTML = html;
-    area.querySelectorAll('[data-edit-partner]').forEach(btn => btn.addEventListener('click', () => editPartner(btn.dataset.editPartner)));
+    area.querySelectorAll('[data-edit-partner]').forEach(btn => btn.addEventListener('click', () => { editingPartnerId = btn.dataset.editPartner; renderPartnerList(); }));
     area.querySelectorAll('[data-remove-partner]').forEach(btn => btn.addEventListener('click', () => removePartner(btn.dataset.removePartner)));
+    area.querySelectorAll('[data-cancel-edit-partner]').forEach(btn => btn.addEventListener('click', () => { editingPartnerId = null; renderPartnerList(); }));
+    area.querySelectorAll('[data-save-partner]').forEach(btn => btn.addEventListener('click', () => savePartnerInlineEdit(btn.dataset.savePartner)));
   }
 
+  async function savePartnerInlineEdit(id) {
+    const p = partners.find(x => x.id === id);
+    if (!p) return;
+    const name = document.getElementById('editPartner_name').value.trim();
+    if (!name) { showToast('거래처명을 입력해주세요.'); return; }
+    const after = {
+      name,
+      bizNo: document.getElementById('editPartner_bizNo').value.trim(),
+      ceo: document.getElementById('editPartner_ceo').value.trim(),
+      address: document.getElementById('editPartner_address').value.trim(),
+      contact: document.getElementById('editPartner_contact').value.trim(),
+      shipTo: document.getElementById('editPartner_shipTo').value.trim(),
+      receiver: document.getElementById('editPartner_receiver').value.trim(),
+      receiverPhone: document.getElementById('editPartner_receiverPhone').value.trim(),
+      shipAddress: document.getElementById('editPartner_shipAddress').value.trim()
+    };
+    await db.collection('partners').doc(id).update(after);
+    const summary = diffSummary(
+      { name: '거래처명', bizNo: '등록번호', ceo: '대표자', address: '주소', contact: '검수자', shipTo: '받는사람', receiver: '받는사람 주소', receiverPhone: '받는사람 번호', shipAddress: '비고' },
+      p, after
+    );
+    logActivity('partner', 'update', id, summary);
+    editingPartnerId = null;
+    showToast('"' + after.name + '" 정보를 수정했어요.');
+  }
+
+  let editingProductId = null;
   function renderProductList() {
     const area = document.getElementById('productListArea');
     const list = orderedProducts();
     if (!list.length) { area.innerHTML = '<div class="empty">아직 등록된 품목이 없어요.</div>'; return; }
     let html = '<div class="table-scroll"><table><thead><tr><th>바코드</th><th>품목명</th><th>규격</th><th class="num">박스입수량</th><th class="num">소비자가</th><th class="num">조합원가</th><th class="num">대리점가</th><th class="num">특판대리점가</th><th></th></tr></thead><tbody>';
     list.forEach(p => {
-      html += '<tr><td>' + escapeHtml(p.barcode||'-') + '</td><td class="prod-name">' + escapeHtml(p.name) + '</td><td>' + escapeHtml(p.spec||'-') + '</td>' +
-        '<td class="num">' + (p.unitsPerBox||'-') + '</td>' +
-        '<td class="num">' + fmtMoney(p.consumerPrice) + '</td><td class="num">' + fmtMoney(p.memberPrice) + '</td>' +
-        '<td class="num">' + fmtMoney(p.distributorPrice) + '</td><td class="num">' + fmtMoney(p.specialDistributorPrice) + '</td>' +
-        '<td class="row-actions"><button data-edit-product="' + p.id + '">수정</button>' + (currentUserIsAdmin ? ' <button data-remove-product="' + p.id + '">삭제</button>' : '') + '</td></tr>';
+      if (editingProductId === p.id) {
+        html += '<tr>' +
+          '<td><input type="text" id="editProd_barcode" value="' + escapeHtml(p.barcode||'') + '" style="width:100px;"></td>' +
+          '<td><input type="text" id="editProd_name" value="' + escapeHtml(p.name||'') + '" style="width:140px;"></td>' +
+          '<td><input type="text" id="editProd_spec" value="' + escapeHtml(p.spec||'') + '" style="width:100px;"></td>' +
+          '<td><input type="number" id="editProd_box" value="' + (p.unitsPerBox||0) + '" style="width:70px;" class="qty"></td>' +
+          '<td><input type="text" inputmode="numeric" class="money-input" id="editProd_consumer" value="' + (p.consumerPrice||0) + '" style="width:90px;"></td>' +
+          '<td><input type="text" inputmode="numeric" class="money-input" id="editProd_member" value="' + (p.memberPrice||0) + '" style="width:90px;"></td>' +
+          '<td><input type="text" inputmode="numeric" class="money-input" id="editProd_dist" value="' + (p.distributorPrice||0) + '" style="width:90px;"></td>' +
+          '<td><input type="text" inputmode="numeric" class="money-input" id="editProd_special" value="' + (p.specialDistributorPrice||0) + '" style="width:90px;"></td>' +
+          '<td class="row-actions"><button data-save-product="' + p.id + '" style="color:var(--primary-dark); font-weight:700;">저장</button> <button data-cancel-edit-product>취소</button></td></tr>';
+      } else {
+        html += '<tr><td>' + escapeHtml(p.barcode||'-') + '</td><td class="prod-name">' + escapeHtml(p.name) + '</td><td>' + escapeHtml(p.spec||'-') + '</td>' +
+          '<td class="num">' + (p.unitsPerBox||'-') + '</td>' +
+          '<td class="num">' + fmtMoney(p.consumerPrice) + '</td><td class="num">' + fmtMoney(p.memberPrice) + '</td>' +
+          '<td class="num">' + fmtMoney(p.distributorPrice) + '</td><td class="num">' + fmtMoney(p.specialDistributorPrice) + '</td>' +
+          '<td class="row-actions"><button data-edit-product="' + p.id + '">수정</button>' + (currentUserIsAdmin ? ' <button data-remove-product="' + p.id + '">삭제</button>' : '') + '</td></tr>';
+      }
     });
     html += '</tbody></table></div>';
     area.innerHTML = html;
-    area.querySelectorAll('[data-edit-product]').forEach(btn => btn.addEventListener('click', () => editProductMaster(btn.dataset.editProduct)));
+    area.querySelectorAll('[data-edit-product]').forEach(btn => btn.addEventListener('click', () => { editingProductId = btn.dataset.editProduct; renderProductList(); }));
     area.querySelectorAll('[data-remove-product]').forEach(btn => btn.addEventListener('click', () => removeProductMaster(btn.dataset.removeProduct)));
+    area.querySelectorAll('[data-cancel-edit-product]').forEach(btn => btn.addEventListener('click', () => { editingProductId = null; renderProductList(); }));
+    area.querySelectorAll('.money-input').forEach(inp => attachMoneyInputFormatting(inp));
+    area.querySelectorAll('[data-save-product]').forEach(btn => btn.addEventListener('click', () => saveProductInlineEdit(btn.dataset.saveProduct)));
+  }
+
+  async function saveProductInlineEdit(id) {
+    const p = productMaster.find(x => x.id === id);
+    if (!p) return;
+    const name = document.getElementById('editProd_name').value.trim();
+    if (!name) { showToast('품목명을 입력해주세요.'); return; }
+    const after = {
+      name,
+      spec: document.getElementById('editProd_spec').value.trim(),
+      barcode: document.getElementById('editProd_barcode').value.trim(),
+      unitsPerBox: Math.round(Number(document.getElementById('editProd_box').value)) || 0,
+      consumerPrice: parseMoneyInputValue(document.getElementById('editProd_consumer').value),
+      memberPrice: parseMoneyInputValue(document.getElementById('editProd_member').value),
+      distributorPrice: parseMoneyInputValue(document.getElementById('editProd_dist').value),
+      specialDistributorPrice: parseMoneyInputValue(document.getElementById('editProd_special').value)
+    };
+    after.defaultPrice = after.distributorPrice || after.consumerPrice || 0;
+    await db.collection('products').doc(id).update(after);
+    const summary = diffSummary(
+      { name: '품목명', spec: '규격', barcode: '바코드', unitsPerBox: '박스입수량', consumerPrice: '소비자가', memberPrice: '조합원가', distributorPrice: '대리점가', specialDistributorPrice: '특판대리점가' },
+      p, after
+    );
+    logActivity('product', 'update', id, summary);
+    editingProductId = null;
+    showToast('"' + after.name + '" 정보를 수정했어요.');
   }
 
   function renderOutboundList() {
