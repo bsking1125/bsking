@@ -549,6 +549,19 @@
 
 <!-- 거래명세표 보기/인쇄 -->
 <!-- 창고이동 정리 -->
+<!-- 미결 숫자 클릭: 어떤 출고 건들이 언제 반영됐는지 보여주는 팝업 -->
+<div id="whBreakdownModal" class="center-screen" style="display:none;">
+  <div class="center-box" style="max-width:480px;">
+    <h1 id="whBreakdownTitle" style="text-align:center; margin-bottom:4px;"></h1>
+    <div class="sub" style="text-align:center; margin-bottom:16px;">이 숫자를 만든 창고이동 건들이에요 (오래된 순).</div>
+    <div id="whBreakdownArea" style="max-height:360px; overflow-y:auto;"></div>
+    <div style="display:flex; gap:8px; margin-top:16px;">
+      <button class="ghost-btn" id="whBreakdownEditBtn" style="flex:1;">직접 수정</button>
+      <button class="primary-btn" id="whBreakdownCloseBtn" style="flex:1;">닫기</button>
+    </div>
+  </div>
+</div>
+
 <div id="transferSummaryModal" class="center-screen" style="display:none;">
   <div class="center-box" style="max-width:600px; max-height:85vh; overflow-y:auto;">
     <div id="transferSummaryContent"></div>
@@ -1275,16 +1288,7 @@ function startApp(fbConfig) {
     area.querySelectorAll('.wh-editable-cell').forEach(td => {
       td.addEventListener('click', () => {
         if (isPromo) { showToast('홍보품 창고 수량은 "홍보품 처리" 탭에서 고쳐주세요.'); return; }
-        const name = td.dataset.product, store = td.dataset.store;
-        const whData = whDataByWarehouse[activeWhWarehouseId];
-        const cur = (whData.products[name].stores && whData.products[name].stores[store]) || 0;
-        const val = prompt('"' + name + '" / "' + store + '" 수량', cur);
-        if (val === null) return;
-        const num = Math.max(0, Math.round(Number(val)) || 0);
-        if (!whData.products[name].stores) whData.products[name].stores = {};
-        whData.products[name].stores[store] = num;
-        whSaveData(activeWhWarehouseId);
-        whRenderStockTable();
+        showWhCellBreakdown(activeWhWarehouseId, td.dataset.store, td.dataset.product);
       });
     });
     area.querySelectorAll('.wh-del-check').forEach(cb => {
@@ -1315,6 +1319,65 @@ function startApp(fbConfig) {
     btn.textContent = whSelectedForDelete.size ? ('선택 ' + whSelectedForDelete.size + '개 삭제') : '선택 삭제';
     btn.disabled = whSelectedForDelete.size === 0;
   }
+
+  // 미결 숫자 하나가 어떤 출고 건들(+창고이동 날짜)로 만들어졌는지 찾아서 보여줘요.
+  // 내부망 수량이랑 안 맞을 때, "언제 넘긴 거지?" 확인할 때 쓰라고 만든 거예요.
+  let whBreakdownContext = null;
+  function findWhBreakdown(warehouseId, dimensionKey, productName) {
+    const rows = [];
+    outboundList.forEach(o => {
+      if (o.warehouseId !== warehouseId) return;
+      if (o.status !== 'done' || o.salesProcessed) return; // 매출처리된 건 이미 미결에서 빠졌으니 skip
+      const key = o.promoMonth || o.partnerName;
+      if (key !== dimensionKey) return;
+      (o.items || []).forEach(it => {
+        if (it.name !== productName) return;
+        rows.push({ date: o.completedAt, qty: it.qty, by: o.completedBy, orderId: o.id, partnerName: o.partnerName });
+      });
+    });
+    rows.sort((a, b) => {
+      const at = a.date && a.date.seconds ? a.date.seconds : 0;
+      const bt = b.date && b.date.seconds ? b.date.seconds : 0;
+      return at - bt;
+    });
+    return rows;
+  }
+  function showWhCellBreakdown(warehouseId, dimensionKey, productName) {
+    whBreakdownContext = { warehouseId, dimensionKey, productName };
+    const rows = findWhBreakdown(warehouseId, dimensionKey, productName);
+    document.getElementById('whBreakdownTitle').textContent = productName + ' · ' + dimensionKey;
+    const area = document.getElementById('whBreakdownArea');
+    if (!rows.length) {
+      area.innerHTML = '<div class="empty">연결된 출고 건을 못 찾았어요 (직접 수정으로 값이 바뀐 경우일 수 있어요).</div>';
+    } else {
+      const total = rows.reduce((s, r) => s + r.qty, 0);
+      let html = '<table><thead><tr><th>창고이동 날짜</th><th class="num">수량</th><th>처리자</th></tr></thead><tbody>';
+      rows.forEach(r => {
+        html += '<tr><td>' + escapeHtml(fmtDate(r.date)) + '</td><td class="num">' + r.qty + '개</td><td>' + escapeHtml(r.by || '-') + '</td></tr>';
+      });
+      html += '</tbody></table><div style="text-align:right; font-weight:700; margin-top:10px;">합계 ' + total + '개</div>';
+      area.innerHTML = html;
+    }
+    document.getElementById('whBreakdownModal').style.display = 'flex';
+  }
+  document.getElementById('whBreakdownCloseBtn').addEventListener('click', () => {
+    document.getElementById('whBreakdownModal').style.display = 'none';
+  });
+  document.getElementById('whBreakdownEditBtn').addEventListener('click', () => {
+    if (!whBreakdownContext) return;
+    const { warehouseId, dimensionKey, productName } = whBreakdownContext;
+    const whData = whDataByWarehouse[warehouseId];
+    if (!whData || !whData.products[productName]) return;
+    const cur = (whData.products[productName].stores && whData.products[productName].stores[dimensionKey]) || 0;
+    const val = prompt('"' + productName + '" / "' + dimensionKey + '" 수량을 직접 고칠게요', cur);
+    if (val === null) return;
+    const num = Math.max(0, Math.round(Number(val)) || 0);
+    if (!whData.products[productName].stores) whData.products[productName].stores = {};
+    whData.products[productName].stores[dimensionKey] = num;
+    whSaveData(warehouseId);
+    whRenderStockTable();
+    document.getElementById('whBreakdownModal').style.display = 'none';
+  });
 
   // 출고 등록/수정/삭제/창고이동완료·취소/매출처리에 맞춰 미결 매트릭스를 자동으로 조정해요.
   // sign이 +1이면 쌓고(미결 발생), -1이면 빼요(미결 해소). warehouseId가 없으면(=아직 창고이동 전) 아무것도 안 해요.
