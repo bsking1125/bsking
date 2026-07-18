@@ -249,6 +249,7 @@
     <button class="tab-btn" data-tab="asof">날짜별 조회</button>
     <button class="tab-btn" data-tab="uploadlog">업로드 내역</button>
     <button class="tab-btn" data-tab="history">처리 기록</button>
+    <button class="tab-btn" data-tab="fee">온라인 수수료</button>
   </div>
 
   <div class="tab-panel" data-panel="stock">
@@ -401,6 +402,29 @@
       <button class="ghost-btn" id="addSettleRowBtn" type="button">+ 상품 추가</button>
       <button class="danger-btn" id="settleAllBtn" type="button">입력한 항목 일괄 매출처리</button>
     </div>
+
+    <div style="margin-top:32px; padding-top:20px; border-top:1px solid var(--line);">
+      <div class="section-head">
+        <div><h2>수기 입력 (거래처 · 월별)</h2><div class="desc">거래처와 월을 고르고 품목을 계속 추가하세요. "처리 완료"를 누르면 미결 현황에서 수량이 빠지고, 온라인 수수료 탭에 그 거래처 · 월이 자동으로 체크돼요.</div></div>
+      </div>
+      <div class="add-row" style="margin-top:0;">
+        <select id="manualSettleStoreSelect"></select>
+        <select id="manualSettleMonthSelect"></select>
+      </div>
+      <div id="manualSettleRowsArea"></div>
+      <div class="add-row">
+        <button class="ghost-btn" id="addManualSettleRowBtn" type="button">+ 품목 추가</button>
+      </div>
+      <div id="manualSettleTotalArea" style="text-align:right; font-size:14px; color: var(--ink-soft); margin: 8px 0 14px;"></div>
+      <button class="danger-btn" id="manualSettleConfirmBtn" type="button">처리 완료</button>
+    </div>
+  </div>
+
+  <div class="tab-panel" data-panel="fee" style="display:none;">
+    <div class="section-head">
+      <div><h2>온라인 수수료</h2><div class="desc">거래처별로 몇 월까지 수수료를 빼고 매출처리했는지 자동으로 표시돼요. (위 "수기 입력"으로 처리한 것만 반영돼요)</div></div>
+    </div>
+    <div id="feeTrackingArea"></div>
   </div>
 
   <div class="tab-panel" data-panel="history" style="display:none;">
@@ -558,7 +582,7 @@ function enterOnlineApp(user, hasWarehouseAccess, hasB2BAccess) {
 }
 
 const STORAGE_KEY = 'pending_stock_v2';
-let data = { products: {}, log: [], mappings: {}, formats: {}, productOrder: [], storeOrder: [] };
+let data = { products: {}, log: [], mappings: {}, formats: {}, productOrder: [], storeOrder: [], barcodes: {}, feeTracking: {} };
 function ensureProduct(name, stamp) {
   stamp = stamp || nowStamp();
   if (!data.products[name]) data.products[name] = { stores: {}, storeDates: {}, updatedAt: stamp };
@@ -634,7 +658,9 @@ function normalizeData(parsed) {
     mappings: parsed.mappings || {},
     formats: parsed.formats || {},
     productOrder: parsed.productOrder || Object.keys(parsed.products || {}),
-    storeOrder: parsed.storeOrder || []
+    storeOrder: parsed.storeOrder || [],
+    barcodes: parsed.barcodes || {},
+    feeTracking: parsed.feeTracking || {}
   };
 }
 let firestoreSyncStarted = false;
@@ -1077,6 +1103,130 @@ document.getElementById('settleAllBtn').addEventListener('click', () => {
   showToast(validRows.length + '건 매출처리했어요.');
 });
 
+// ===== 수기 입력 (거래처 · 월별) + 온라인 수수료 자동 체크 =====
+function monthOptionsList() {
+  const now = new Date();
+  const list = [];
+  for (let i = 0; i < 15; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const y = d.getFullYear(), m = d.getMonth() + 1;
+    list.push({ value: y + '-' + String(m).padStart(2, '0'), label: y + '년 ' + m + '월' });
+  }
+  return list;
+}
+let manualSettleRows = [{ id: uid(), query: '', qty: '' }];
+function findProductByQuery(q) {
+  q = (q || '').trim();
+  if (!q) return null;
+  if (data.products[q]) return q;
+  if (data.barcodes[q]) return data.barcodes[q];
+  return null;
+}
+function renderManualSettleControls() {
+  const storeSel = document.getElementById('manualSettleStoreSelect');
+  const monthSel = document.getElementById('manualSettleMonthSelect');
+  const prevStore = storeSel.value;
+  const prevMonth = monthSel.value;
+  const stores = allStores();
+  storeSel.innerHTML = '<option value="">거래처 선택</option>' + stores.map(s => '<option value="' + escapeHtml(s) + '">' + escapeHtml(s) + '</option>').join('');
+  monthSel.innerHTML = '<option value="">월 선택</option>' + monthOptionsList().map(m => '<option value="' + m.value + '">' + m.label + '</option>').join('');
+  if (stores.includes(prevStore)) storeSel.value = prevStore;
+  if (prevMonth) monthSel.value = prevMonth;
+}
+function renderManualSettleRows() {
+  const area = document.getElementById('manualSettleRowsArea');
+  const names = Object.keys(data.products);
+  area.innerHTML = '<datalist id="manualProductDatalist">' + names.map(n => '<option value="' + escapeHtml(n) + '">').join('') + '</datalist>' +
+    manualSettleRows.map((row, idx) => {
+      const resolved = findProductByQuery(row.query);
+      return '<div class="add-row manual-settle-row" data-row="' + row.id + '" data-idx="' + idx + '">' +
+        '<input type="text" class="manual-settle-query" list="manualProductDatalist" placeholder="품목명 또는 바코드" value="' + escapeHtml(row.query || '') + '">' +
+        (row.query && !resolved ? '<span style="color:#e11d48; font-size:12px;">일치하는 품목 없음</span>' : (resolved && resolved !== row.query ? '<span style="color:var(--ink-soft); font-size:12px;">→ ' + escapeHtml(resolved) + '</span>' : '')) +
+        '<input type="number" class="qty manual-settle-qty" placeholder="수량" min="1" value="' + (row.qty || '') + '">' +
+        '<button class="ghost-btn remove-manual-settle-row" type="button">삭제</button>' +
+        '</div>';
+    }).join('');
+
+  area.querySelectorAll('.manual-settle-row').forEach(rowEl => {
+    const id = rowEl.dataset.row;
+    const idx = Number(rowEl.dataset.idx);
+    const row = manualSettleRows.find(r => r.id === id);
+    const queryInput = rowEl.querySelector('.manual-settle-query');
+    const qtyInput = rowEl.querySelector('.manual-settle-qty');
+    queryInput.addEventListener('input', e => { row.query = e.target.value; });
+    queryInput.addEventListener('change', () => { renderManualSettleRows(); updateManualSettleTotal(); });
+    qtyInput.addEventListener('input', e => { row.qty = e.target.value; updateManualSettleTotal(); });
+    rowEl.querySelector('.remove-manual-settle-row').addEventListener('click', () => {
+      manualSettleRows = manualSettleRows.filter(r => r.id !== id);
+      if (manualSettleRows.length === 0) manualSettleRows.push({ id: uid(), query: '', qty: '' });
+      renderManualSettleRows(); updateManualSettleTotal();
+    });
+    [queryInput, qtyInput].forEach(inp => {
+      inp.addEventListener('keydown', e => {
+        if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+        e.preventDefault();
+        const nextIdx = idx + (e.key === 'ArrowDown' ? 1 : -1);
+        if (nextIdx < 0 || nextIdx >= manualSettleRows.length) return;
+        const targetRowEl = area.querySelectorAll('.manual-settle-row')[nextIdx];
+        const targetInput = targetRowEl.querySelector(inp.classList.contains('manual-settle-query') ? '.manual-settle-query' : '.manual-settle-qty');
+        if (targetInput) { targetInput.focus(); targetInput.select(); }
+      });
+      inp.addEventListener('keydown', e => {
+        if (e.key !== 'Enter') return;
+        if (idx === manualSettleRows.length - 1) {
+          manualSettleRows.push({ id: uid(), query: '', qty: '' });
+          renderManualSettleRows();
+          const rows = area.querySelectorAll('.manual-settle-row');
+          const last = rows[rows.length - 1];
+          if (last) last.querySelector('.manual-settle-query').focus();
+        }
+      });
+    });
+  });
+}
+function updateManualSettleTotal() {
+  const total = manualSettleRows.reduce((s, r) => s + (Number(r.qty) || 0), 0);
+  document.getElementById('manualSettleTotalArea').textContent = '총 수량: ' + total + '개';
+}
+document.getElementById('addManualSettleRowBtn').addEventListener('click', () => {
+  manualSettleRows.push({ id: uid(), query: '', qty: '' });
+  renderManualSettleRows(); updateManualSettleTotal();
+});
+document.getElementById('manualSettleConfirmBtn').addEventListener('click', () => {
+  const store = document.getElementById('manualSettleStoreSelect').value;
+  const month = document.getElementById('manualSettleMonthSelect').value;
+  if (!store) { showToast('거래처를 선택해주세요.'); return; }
+  if (!month) { showToast('월을 선택해주세요.'); return; }
+  const resolvedRows = manualSettleRows.map(r => ({ product: findProductByQuery(r.query), qty: Number(r.qty) || 0 }))
+    .filter(r => r.product && r.qty > 0);
+  if (!resolvedRows.length) { showToast('처리할 품목이 없어요. 품목명(또는 바코드)과 수량을 입력해주세요.'); return; }
+  resolvedRows.forEach(r => settleProduct(r.product, store, r.qty));
+  if (!data.feeTracking[store]) data.feeTracking[store] = {};
+  data.feeTracking[store][month] = true;
+  saveData();
+  renderFeeTracking();
+  manualSettleRows = [{ id: uid(), query: '', qty: '' }];
+  renderManualSettleRows();
+  updateManualSettleTotal();
+  showToast(store + ' / ' + month + ' — ' + resolvedRows.length + '개 품목 처리 완료했어요.');
+});
+function renderFeeTracking() {
+  const area = document.getElementById('feeTrackingArea');
+  const stores = allStores();
+  if (!stores.length) { area.innerHTML = '<div class="empty">거래처가 없어요. 미결 현황에 스토어가 등록되면 여기 나타나요.</div>'; return; }
+  const months = monthOptionsList().slice().reverse();
+  let html = '<div style="overflow-x:auto;"><table><thead><tr><th>거래처</th>' +
+    months.map(m => '<th class="num">' + m.label.replace('년 ', '.').replace('월', '') + '</th>').join('') + '</tr></thead><tbody>';
+  stores.forEach(s => {
+    html += '<tr><td>' + escapeHtml(s) + '</td>' + months.map(m => {
+      const done = data.feeTracking[s] && data.feeTracking[s][m.value];
+      return '<td class="num" style="' + (done ? 'color:#059669; font-weight:700;' : 'color:var(--ink-soft);') + '">' + (done ? '✓' : '-') + '</td>';
+    }).join('') + '</tr>';
+  });
+  html += '</tbody></table></div>';
+  area.innerHTML = html;
+}
+
 function renderUndoBar() {
   const bar = document.getElementById('undoBar');
   if (!bar) return;
@@ -1176,6 +1326,10 @@ function renderAll() {
   renderStockTable();
   renderMappingTable();
   renderSettleRows();
+  renderManualSettleControls();
+  renderManualSettleRows();
+  updateManualSettleTotal();
+  renderFeeTracking();
   renderHistory();
   const uLogStart = document.getElementById('uploadLogStartInput');
   const uLogEnd = document.getElementById('uploadLogEndInput');
@@ -1374,7 +1528,7 @@ document.getElementById('resetAllBtn').addEventListener('click', () => {
   if (pw !== RESET_ALL_PASSWORD) { showToast('비밀번호가 틀렸어요. 초기화를 취소했어요.'); return; }
   if (!confirm('정말 모든 데이터(재고, 기록, 매핑)를 초기화할까요?\n\n이 작업은 되돌릴 수 없어요. 필요하면 먼저 "데이터 저장"으로 백업해두세요.')) return;
   if (!confirm('마지막 확인이에요. 정말 전체 초기화할까요?')) return;
-  data = { products: {}, log: [], mappings: {}, formats: {}, productOrder: [], storeOrder: [] };
+  data = { products: {}, log: [], mappings: {}, formats: {}, productOrder: [], storeOrder: [], barcodes: {}, feeTracking: {} };
   saveData(); renderAll();
   showToast('전체 초기화했어요.');
 });
