@@ -395,21 +395,11 @@
 
   <div class="tab-panel" data-panel="settle" style="display:none;">
     <div class="section-head">
-      <div><h2>매출처리 (차감)</h2><div class="desc">정산이 확정된 스토어 · 상품 · 수량만큼 총 재고에서 빼주세요. 여러 개를 한 번에 처리할 수 있어요.</div></div>
-    </div>
-    <div id="settleRowsArea"></div>
-    <div class="add-row">
-      <button class="ghost-btn" id="addSettleRowBtn" type="button">+ 상품 추가</button>
-      <button class="danger-btn" id="settleAllBtn" type="button">입력한 항목 일괄 매출처리</button>
-    </div>
-
-    <div style="margin-top:32px; padding-top:20px; border-top:1px solid var(--line);">
-      <div class="section-head">
-        <div><h2>수기 입력 (거래처 · 월별)</h2><div class="desc">거래처와 월을 고르고 품목을 계속 추가하세요. "처리 완료"를 누르면 미결 현황에서 수량이 빠지고, 온라인 수수료 탭에 그 거래처 · 월이 자동으로 체크돼요.</div></div>
+      <div><h2>매출처리 (수기 입력)</h2><div class="desc">거래처와 월을 고르고 품목을 계속 추가하세요. "처리 완료"를 누르면 미결 현황에서 수량이 빠지고, 온라인 수수료 탭에 그 거래처 · 월이 자동으로 나타나요.</div></div>
       </div>
       <div class="add-row" style="margin-top:0;">
         <select id="manualSettleStoreSelect"></select>
-        <select id="manualSettleMonthSelect"></select>
+        <input type="month" id="manualSettleMonthSelect">
       </div>
       <div id="manualSettleRowsArea"></div>
       <div class="add-row">
@@ -418,7 +408,6 @@
       <div id="manualSettleTotalArea" style="text-align:right; font-size:14px; color: var(--ink-soft); margin: 8px 0 14px;"></div>
       <button class="danger-btn" id="manualSettleConfirmBtn" type="button">처리 완료</button>
     </div>
-  </div>
 
   <div class="tab-panel" data-panel="fee" style="display:none;">
     <div class="section-head">
@@ -1050,70 +1039,9 @@ function adjustStock(name, store, newVal) {
   if (diff !== 0) showToast(escapeHtml(store) + ' 재고를 ' + newVal + '개로 수정했어요.');
 }
 
-let settleRows = [{ id: uid() }];
 function uid() { return Math.random().toString(36).slice(2, 9); }
 
-function renderSettleRows() {
-  const area = document.getElementById('settleRowsArea');
-  const names = Object.keys(data.products);
-  if (names.length === 0) {
-    area.innerHTML = '<div class="empty">등록된 상품이 없어요. 먼저 "미결 현황" 탭에서 상품을 추가해주세요.</div>';
-    return;
-  }
-  area.innerHTML = settleRows.map(row => {
-    if (!row.product) row.product = names[0];
-    const p = data.products[row.product];
-    const stores = p ? Object.keys(p.stores || {}) : [];
-    if (!row.store || stores.indexOf(row.store) === -1) row.store = stores[0] || '';
-    const productOptions = names.map(n => '<option value="' + escapeHtml(n) + '"' + (row.product === n ? ' selected' : '') + '>' + escapeHtml(n) + ' (합계 ' + totalFor(n) + ')</option>').join('');
-    const storeOptions = stores.length ? stores.map(s => '<option value="' + escapeHtml(s) + '"' + (row.store === s ? ' selected' : '') + '>' + escapeHtml(s) + ' (' + p.stores[s] + ')</option>').join('') : '<option value="">스토어 없음</option>';
-    return '<div class="add-row settle-row" data-row="' + row.id + '">' +
-      '<select class="settle-row-product">' + productOptions + '</select>' +
-      '<select class="settle-row-store">' + storeOptions + '</select>' +
-      '<input type="number" class="qty settle-row-qty" placeholder="차감 수량" min="1" value="' + (row.qty || '') + '">' +
-      '<button class="ghost-btn remove-settle-row" type="button">삭제</button>' +
-      '</div>';
-  }).join('');
-
-  area.querySelectorAll('.settle-row').forEach(rowEl => {
-    const id = rowEl.dataset.row;
-    const row = settleRows.find(r => r.id === id);
-    rowEl.querySelector('.settle-row-product').addEventListener('change', e => {
-      row.product = e.target.value; row.store = null; renderSettleRows();
-    });
-    rowEl.querySelector('.settle-row-store').addEventListener('change', e => { row.store = e.target.value; });
-    rowEl.querySelector('.settle-row-qty').addEventListener('input', e => { row.qty = e.target.value; });
-    rowEl.querySelector('.remove-settle-row').addEventListener('click', () => {
-      settleRows = settleRows.filter(r => r.id !== id);
-      if (settleRows.length === 0) settleRows.push({ id: uid() });
-      renderSettleRows();
-    });
-  });
-}
-document.getElementById('addSettleRowBtn').addEventListener('click', () => {
-  settleRows.push({ id: uid() });
-  renderSettleRows();
-});
-document.getElementById('settleAllBtn').addEventListener('click', () => {
-  const validRows = settleRows.filter(r => r.product && r.store && Number(r.qty) > 0);
-  if (!validRows.length) { showToast('처리할 항목이 없어요. 상품 · 스토어 · 수량을 입력해주세요.'); return; }
-  validRows.forEach(r => settleProduct(r.product, r.store, r.qty));
-  settleRows = [{ id: uid() }];
-  renderSettleRows();
-  showToast(validRows.length + '건 매출처리했어요.');
-});
-
 // ===== 수기 입력 (거래처 · 월별) + 온라인 수수료 자동 체크 =====
-function monthOptionsList() {
-  const now = new Date();
-  const list = [];
-  for (let i = 0; i < 15; i++) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const y = d.getFullYear(), m = d.getMonth() + 1;
-    list.push({ value: y + '-' + String(m).padStart(2, '0'), label: y + '년 ' + m + '월' });
-  }
-  return list;
-}
 let manualSettleRows = [{ id: uid(), query: '', qty: '' }];
 function findProductByQuery(q) {
   q = (q || '').trim();
@@ -1124,14 +1052,14 @@ function findProductByQuery(q) {
 }
 function renderManualSettleControls() {
   const storeSel = document.getElementById('manualSettleStoreSelect');
-  const monthSel = document.getElementById('manualSettleMonthSelect');
   const prevStore = storeSel.value;
-  const prevMonth = monthSel.value;
   const stores = allStores();
   storeSel.innerHTML = '<option value="">거래처 선택</option>' + stores.map(s => '<option value="' + escapeHtml(s) + '">' + escapeHtml(s) + '</option>').join('');
-  monthSel.innerHTML = '<option value="">월 선택</option>' + monthOptionsList().map(m => '<option value="' + m.value + '">' + m.label + '</option>').join('');
   if (stores.includes(prevStore)) storeSel.value = prevStore;
-  if (prevMonth) monthSel.value = prevMonth;
+}
+function fmtMonthLabel(ym) {
+  const parts = ym.split('-');
+  return parts[0].slice(2) + '.' + Number(parts[1]);
 }
 function renderManualSettleRows() {
   const area = document.getElementById('manualSettleRowsArea');
@@ -1212,14 +1140,16 @@ document.getElementById('manualSettleConfirmBtn').addEventListener('click', () =
 });
 function renderFeeTracking() {
   const area = document.getElementById('feeTrackingArea');
-  const stores = allStores();
-  if (!stores.length) { area.innerHTML = '<div class="empty">거래처가 없어요. 미결 현황에 스토어가 등록되면 여기 나타나요.</div>'; return; }
-  const months = monthOptionsList().slice().reverse();
+  const stores = Object.keys(data.feeTracking || {}).filter(s => Object.keys(data.feeTracking[s] || {}).length > 0).sort();
+  if (!stores.length) { area.innerHTML = '<div class="empty">아직 수기 입력으로 처리한 내역이 없어요. "매출처리" 탭에서 수기 입력을 하면 여기 자동으로 나타나요.</div>'; return; }
+  const monthSet = new Set();
+  stores.forEach(s => Object.keys(data.feeTracking[s]).forEach(m => monthSet.add(m)));
+  const months = Array.from(monthSet).sort();
   let html = '<div style="overflow-x:auto;"><table><thead><tr><th>거래처</th>' +
-    months.map(m => '<th class="num">' + m.label.replace('년 ', '.').replace('월', '') + '</th>').join('') + '</tr></thead><tbody>';
+    months.map(m => '<th class="num">' + fmtMonthLabel(m) + '</th>').join('') + '</tr></thead><tbody>';
   stores.forEach(s => {
     html += '<tr><td>' + escapeHtml(s) + '</td>' + months.map(m => {
-      const done = data.feeTracking[s] && data.feeTracking[s][m.value];
+      const done = data.feeTracking[s] && data.feeTracking[s][m];
       return '<td class="num" style="' + (done ? 'color:#059669; font-weight:700;' : 'color:var(--ink-soft);') + '">' + (done ? '✓' : '-') + '</td>';
     }).join('') + '</tr>';
   });
@@ -1325,7 +1255,6 @@ function renderAll() {
   if (!loaded) return;
   renderStockTable();
   renderMappingTable();
-  renderSettleRows();
   renderManualSettleControls();
   renderManualSettleRows();
   updateManualSettleTotal();
