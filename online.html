@@ -1149,10 +1149,11 @@ function renderManualSettleRows() {
         highlightSuggest();
         return;
       }
-      if (isOpen && e.key === 'Enter' && activeSuggestIdx >= 0) {
+      if (isOpen && e.key === 'Enter') {
         e.preventDefault();
         const list = suggestForQuery(row.query);
-        if (list[activeSuggestIdx]) pickSuggest(list[activeSuggestIdx]);
+        const pickIdx = activeSuggestIdx >= 0 ? activeSuggestIdx : 0;
+        if (list[pickIdx]) pickSuggest(list[pickIdx]);
         return;
       }
       if (isOpen && e.key === 'Escape') { closeSuggest(); return; }
