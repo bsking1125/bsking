@@ -669,6 +669,13 @@ function startFirestoreSync() {
       renderAll();
     }
   }, err => showToast('실시간 동기화 연결에 실패했어요: ' + err.message));
+
+  // B2B 쪽에 등록해둔 바코드를 그대로 가져다 써요 (읽기 전용, 여기서는 수정 안 해요)
+  db.collection('b2bProducts').onSnapshot(snap => {
+    b2bProductMaster = snap.docs.map(d => d.data()).filter(p => p && p.name);
+    buildManualProductCandidates();
+    if (loaded) renderManualSettleRows();
+  }, () => { /* B2B 접근 권한이 없으면 그냥 조용히 스킵해요 (이름 검색은 그대로 돼요) */ });
 }
 
 function migrateLogIfNeeded() {
@@ -1043,12 +1050,27 @@ function uid() { return Math.random().toString(36).slice(2, 9); }
 
 // ===== 수기 입력 (거래처 · 월별) + 온라인 수수료 자동 체크 =====
 let manualSettleRows = [{ id: uid(), query: '', qty: '' }];
+let b2bProductMaster = [];
+let manualProductCandidates = [];
+function buildManualProductCandidates() {
+  const barcodeByName = {};
+  b2bProductMaster.forEach(p => { if (p && p.name && p.barcode) barcodeByName[p.name] = p.barcode; });
+  manualProductCandidates = Object.keys(data.products).map(name => ({ name, barcode: barcodeByName[name] || '' }));
+}
 function findProductByQuery(q) {
   q = (q || '').trim();
   if (!q) return null;
   if (data.products[q]) return q;
-  if (data.barcodes[q]) return data.barcodes[q];
+  const byBarcode = manualProductCandidates.find(p => p.barcode && p.barcode === q);
+  if (byBarcode) return byBarcode.name;
   return null;
+}
+function suggestForQuery(q) {
+  const query = (q || '').trim().toLowerCase();
+  if (!query) return manualProductCandidates.slice(0, 8);
+  return manualProductCandidates.filter(p =>
+    p.name.toLowerCase().includes(query) || (p.barcode && p.barcode.toLowerCase().includes(query))
+  ).slice(0, 8);
 }
 function renderManualSettleControls() {
   const storeSel = document.getElementById('manualSettleStoreSelect');
@@ -1063,52 +1085,114 @@ function fmtMonthLabel(ym) {
 }
 function renderManualSettleRows() {
   const area = document.getElementById('manualSettleRowsArea');
-  const names = Object.keys(data.products);
-  area.innerHTML = '<datalist id="manualProductDatalist">' + names.map(n => '<option value="' + escapeHtml(n) + '">').join('') + '</datalist>' +
-    manualSettleRows.map((row, idx) => {
-      const resolved = findProductByQuery(row.query);
-      return '<div class="add-row manual-settle-row" data-row="' + row.id + '" data-idx="' + idx + '">' +
-        '<input type="text" class="manual-settle-query" list="manualProductDatalist" placeholder="품목명 또는 바코드" value="' + escapeHtml(row.query || '') + '">' +
-        (row.query && !resolved ? '<span style="color:#e11d48; font-size:12px;">일치하는 품목 없음</span>' : (resolved && resolved !== row.query ? '<span style="color:var(--ink-soft); font-size:12px;">→ ' + escapeHtml(resolved) + '</span>' : '')) +
-        '<input type="number" class="qty manual-settle-qty" placeholder="수량" min="1" value="' + (row.qty || '') + '">' +
-        '<button class="ghost-btn remove-manual-settle-row" type="button">삭제</button>' +
-        '</div>';
-    }).join('');
+  buildManualProductCandidates();
+  area.innerHTML = manualSettleRows.map((row, idx) => {
+    const resolved = findProductByQuery(row.query);
+    return '<div class="add-row manual-settle-row" data-row="' + row.id + '" data-idx="' + idx + '">' +
+      '<div style="position:relative; flex:1; min-width:160px;">' +
+      '<input type="text" class="manual-settle-query" autocomplete="off" placeholder="품목명 또는 바코드" value="' + escapeHtml(row.query || '') + '">' +
+      '<div class="manual-settle-suggest" style="display:none; position:absolute; top:100%; left:0; right:0; margin-top:4px; background:var(--surface); border:1px solid var(--line); border-radius:8px; box-shadow:0 4px 10px rgba(0,0,0,.08); z-index:50; max-height:220px; overflow-y:auto;"></div>' +
+      '</div>' +
+      (row.query && !resolved ? '<span style="color:#e11d48; font-size:12px; white-space:nowrap;">일치하는 품목 없음</span>' : (resolved && resolved !== row.query ? '<span style="color:var(--ink-soft); font-size:12px; white-space:nowrap;">→ ' + escapeHtml(resolved) + '</span>' : '')) +
+      '<input type="number" class="qty manual-settle-qty" placeholder="수량" min="1" value="' + (row.qty || '') + '">' +
+      '<button class="ghost-btn remove-manual-settle-row" type="button">삭제</button>' +
+      '</div>';
+  }).join('');
 
   area.querySelectorAll('.manual-settle-row').forEach(rowEl => {
     const id = rowEl.dataset.row;
     const idx = Number(rowEl.dataset.idx);
     const row = manualSettleRows.find(r => r.id === id);
     const queryInput = rowEl.querySelector('.manual-settle-query');
+    const suggestBox = rowEl.querySelector('.manual-settle-suggest');
     const qtyInput = rowEl.querySelector('.manual-settle-qty');
-    queryInput.addEventListener('input', e => { row.query = e.target.value; });
-    queryInput.addEventListener('change', () => { renderManualSettleRows(); updateManualSettleTotal(); });
-    qtyInput.addEventListener('input', e => { row.qty = e.target.value; updateManualSettleTotal(); });
-    rowEl.querySelector('.remove-manual-settle-row').addEventListener('click', () => {
-      manualSettleRows = manualSettleRows.filter(r => r.id !== id);
-      if (manualSettleRows.length === 0) manualSettleRows.push({ id: uid(), query: '', qty: '' });
-      renderManualSettleRows(); updateManualSettleTotal();
+    let activeSuggestIdx = -1;
+
+    function closeSuggest() { suggestBox.style.display = 'none'; suggestBox.innerHTML = ''; activeSuggestIdx = -1; }
+    function highlightSuggest() {
+      suggestBox.querySelectorAll('.manual-settle-suggest-item').forEach((el, i) => {
+        el.style.background = i === activeSuggestIdx ? 'var(--line)' : '';
+      });
+    }
+    function pickSuggest(p) {
+      row.query = p.name; queryInput.value = p.name;
+      closeSuggest();
+      qtyInput.focus(); qtyInput.select();
+    }
+    function openSuggest() {
+      const list = suggestForQuery(row.query);
+      if (!list.length) { closeSuggest(); return; }
+      activeSuggestIdx = -1;
+      suggestBox.innerHTML = list.map((p, i) =>
+        '<div class="manual-settle-suggest-item" data-i="' + i + '" style="padding:8px 10px; cursor:pointer; font-size:13px;">' +
+        escapeHtml(p.name) + (p.barcode ? '<span style="color:var(--ink-soft); font-size:11px; margin-left:6px;">' + escapeHtml(p.barcode) + '</span>' : '') +
+        '</div>'
+      ).join('');
+      suggestBox.style.display = 'block';
+      suggestBox.querySelectorAll('.manual-settle-suggest-item').forEach(itemEl => {
+        itemEl.addEventListener('mousedown', ev => { ev.preventDefault(); pickSuggest(list[Number(itemEl.dataset.i)]); });
+      });
+    }
+
+    queryInput.addEventListener('input', e => { row.query = e.target.value; openSuggest(); });
+    queryInput.addEventListener('focus', () => { openSuggest(); });
+    queryInput.addEventListener('blur', () => {
+      setTimeout(() => { closeSuggest(); renderManualSettleRows(); updateManualSettleTotal(); }, 120);
     });
-    [queryInput, qtyInput].forEach(inp => {
-      inp.addEventListener('keydown', e => {
-        if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+    queryInput.addEventListener('keydown', e => {
+      const isOpen = suggestBox.style.display === 'block';
+      if (isOpen && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+        e.preventDefault();
+        const count = suggestBox.querySelectorAll('.manual-settle-suggest-item').length;
+        if (!count) return;
+        activeSuggestIdx = e.key === 'ArrowDown' ? Math.min(activeSuggestIdx + 1, count - 1) : Math.max(activeSuggestIdx - 1, 0);
+        highlightSuggest();
+        return;
+      }
+      if (isOpen && e.key === 'Enter' && activeSuggestIdx >= 0) {
+        e.preventDefault();
+        const list = suggestForQuery(row.query);
+        if (list[activeSuggestIdx]) pickSuggest(list[activeSuggestIdx]);
+        return;
+      }
+      if (isOpen && e.key === 'Escape') { closeSuggest(); return; }
+      if (!isOpen && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
         e.preventDefault();
         const nextIdx = idx + (e.key === 'ArrowDown' ? 1 : -1);
         if (nextIdx < 0 || nextIdx >= manualSettleRows.length) return;
         const targetRowEl = area.querySelectorAll('.manual-settle-row')[nextIdx];
-        const targetInput = targetRowEl.querySelector(inp.classList.contains('manual-settle-query') ? '.manual-settle-query' : '.manual-settle-qty');
+        const targetInput = targetRowEl && targetRowEl.querySelector('.manual-settle-query');
         if (targetInput) { targetInput.focus(); targetInput.select(); }
-      });
-      inp.addEventListener('keydown', e => {
-        if (e.key !== 'Enter') return;
+      }
+    });
+
+    qtyInput.addEventListener('input', e => { row.qty = e.target.value; updateManualSettleTotal(); });
+    qtyInput.addEventListener('keydown', e => {
+      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+        e.preventDefault();
+        const nextIdx = idx + (e.key === 'ArrowDown' ? 1 : -1);
+        if (nextIdx < 0 || nextIdx >= manualSettleRows.length) return;
+        const targetRowEl = area.querySelectorAll('.manual-settle-row')[nextIdx];
+        const targetInput = targetRowEl && targetRowEl.querySelector('.manual-settle-qty');
+        if (targetInput) { targetInput.focus(); targetInput.select(); }
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
         if (idx === manualSettleRows.length - 1) {
           manualSettleRows.push({ id: uid(), query: '', qty: '' });
-          renderManualSettleRows();
-          const rows = area.querySelectorAll('.manual-settle-row');
-          const last = rows[rows.length - 1];
-          if (last) last.querySelector('.manual-settle-query').focus();
         }
-      });
+        renderManualSettleRows();
+        const rows = area.querySelectorAll('.manual-settle-row');
+        const nextRowEl = rows[idx + 1];
+        if (nextRowEl) nextRowEl.querySelector('.manual-settle-query').focus();
+      }
+    });
+
+    rowEl.querySelector('.remove-manual-settle-row').addEventListener('click', () => {
+      manualSettleRows = manualSettleRows.filter(r => r.id !== id);
+      if (manualSettleRows.length === 0) manualSettleRows.push({ id: uid(), query: '', qty: '' });
+      renderManualSettleRows(); updateManualSettleTotal();
     });
   });
 }
