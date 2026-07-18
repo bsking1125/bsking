@@ -1087,13 +1087,12 @@ function renderManualSettleRows() {
   const area = document.getElementById('manualSettleRowsArea');
   buildManualProductCandidates();
   area.innerHTML = manualSettleRows.map((row, idx) => {
-    const resolved = findProductByQuery(row.query);
     return '<div class="add-row manual-settle-row" data-row="' + row.id + '" data-idx="' + idx + '">' +
       '<div style="position:relative; flex:1; min-width:160px;">' +
       '<input type="text" class="manual-settle-query" autocomplete="off" placeholder="품목명 또는 바코드" value="' + escapeHtml(row.query || '') + '">' +
       '<div class="manual-settle-suggest" style="display:none; position:absolute; top:100%; left:0; right:0; margin-top:4px; background:var(--surface); border:1px solid var(--line); border-radius:8px; box-shadow:0 4px 10px rgba(0,0,0,.08); z-index:50; max-height:220px; overflow-y:auto;"></div>' +
       '</div>' +
-      (row.query && !resolved ? '<span style="color:#e11d48; font-size:12px; white-space:nowrap;">일치하는 품목 없음</span>' : (resolved && resolved !== row.query ? '<span style="color:var(--ink-soft); font-size:12px; white-space:nowrap;">→ ' + escapeHtml(resolved) + '</span>' : '')) +
+      '<span class="manual-settle-resolved-label" style="font-size:12px; white-space:nowrap;"></span>' +
       '<input type="number" class="qty manual-settle-qty" placeholder="수량" min="1" value="' + (row.qty || '') + '">' +
       '<button class="ghost-btn remove-manual-settle-row" type="button">삭제</button>' +
       '</div>';
@@ -1106,8 +1105,22 @@ function renderManualSettleRows() {
     const queryInput = rowEl.querySelector('.manual-settle-query');
     const suggestBox = rowEl.querySelector('.manual-settle-suggest');
     const qtyInput = rowEl.querySelector('.manual-settle-qty');
+    const labelEl = rowEl.querySelector('.manual-settle-resolved-label');
     let activeSuggestIdx = -1;
 
+    function updateResolvedLabel() {
+      const resolved = findProductByQuery(row.query);
+      if (row.query && !resolved) {
+        labelEl.textContent = '일치하는 품목 없음';
+        labelEl.style.color = '#e11d48';
+      } else if (resolved && resolved !== row.query) {
+        labelEl.textContent = '→ ' + resolved;
+        labelEl.style.color = 'var(--ink-soft)';
+      } else {
+        labelEl.textContent = '';
+      }
+    }
+    updateResolvedLabel();
     function closeSuggest() { suggestBox.style.display = 'none'; suggestBox.innerHTML = ''; activeSuggestIdx = -1; }
     function highlightSuggest() {
       suggestBox.querySelectorAll('.manual-settle-suggest-item').forEach((el, i) => {
@@ -1117,6 +1130,7 @@ function renderManualSettleRows() {
     function pickSuggest(p) {
       row.query = p.name; queryInput.value = p.name;
       closeSuggest();
+      updateResolvedLabel();
       qtyInput.focus(); qtyInput.select();
     }
     function openSuggest() {
@@ -1134,10 +1148,11 @@ function renderManualSettleRows() {
       });
     }
 
-    queryInput.addEventListener('input', e => { row.query = e.target.value; openSuggest(); });
+    queryInput.addEventListener('input', e => { row.query = e.target.value; openSuggest(); updateResolvedLabel(); });
     queryInput.addEventListener('focus', () => { openSuggest(); });
     queryInput.addEventListener('blur', () => {
-      setTimeout(() => { closeSuggest(); renderManualSettleRows(); updateManualSettleTotal(); }, 120);
+      // 여기서 화면 전체를 다시 그리면 방금 옮겨간 수량 칸까지 같이 사라지니까, 목록만 닫아요.
+      setTimeout(() => { closeSuggest(); }, 120);
     });
     queryInput.addEventListener('keydown', e => {
       const suggestVisible = suggestBox.style.display === 'block' && suggestBox.children.length > 0;
