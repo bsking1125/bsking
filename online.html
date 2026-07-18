@@ -1140,31 +1140,36 @@ function renderManualSettleRows() {
       setTimeout(() => { closeSuggest(); renderManualSettleRows(); updateManualSettleTotal(); }, 120);
     });
     queryInput.addEventListener('keydown', e => {
-      const isOpen = suggestBox.style.display === 'block';
-      if (isOpen && (e.key === 'ArrowDown' || e.key === 'ArrowUp')) {
+      const suggestVisible = suggestBox.style.display === 'block' && suggestBox.children.length > 0;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
-        const count = suggestBox.querySelectorAll('.manual-settle-suggest-item').length;
-        if (!count) return;
-        activeSuggestIdx = e.key === 'ArrowDown' ? Math.min(activeSuggestIdx + 1, count - 1) : Math.max(activeSuggestIdx - 1, 0);
-        highlightSuggest();
+        if (suggestVisible) {
+          const count = suggestBox.querySelectorAll('.manual-settle-suggest-item').length;
+          activeSuggestIdx = e.key === 'ArrowDown' ? Math.min(activeSuggestIdx + 1, count - 1) : Math.max(activeSuggestIdx - 1, 0);
+          highlightSuggest();
+        } else {
+          const nextIdx = idx + (e.key === 'ArrowDown' ? 1 : -1);
+          if (nextIdx < 0 || nextIdx >= manualSettleRows.length) return;
+          const targetRowEl = area.querySelectorAll('.manual-settle-row')[nextIdx];
+          const targetInput = targetRowEl && targetRowEl.querySelector('.manual-settle-query');
+          if (targetInput) { targetInput.focus(); targetInput.select(); }
+        }
         return;
       }
-      if (isOpen && e.key === 'Enter') {
+      if (e.key === 'Enter') {
+        // 목록이 열려있든 아니든, 지금 입력값 기준으로 제일 위 후보(또는 화살표로 고른 후보)를 골라요.
         e.preventDefault();
         const list = suggestForQuery(row.query);
-        const pickIdx = activeSuggestIdx >= 0 ? activeSuggestIdx : 0;
-        if (list[pickIdx]) pickSuggest(list[pickIdx]);
+        if (list.length) {
+          const pickIdx = activeSuggestIdx >= 0 && activeSuggestIdx < list.length ? activeSuggestIdx : 0;
+          pickSuggest(list[pickIdx]);
+        } else if (findProductByQuery(row.query)) {
+          closeSuggest();
+          qtyInput.focus(); qtyInput.select();
+        }
         return;
       }
-      if (isOpen && e.key === 'Escape') { closeSuggest(); return; }
-      if (!isOpen && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
-        e.preventDefault();
-        const nextIdx = idx + (e.key === 'ArrowDown' ? 1 : -1);
-        if (nextIdx < 0 || nextIdx >= manualSettleRows.length) return;
-        const targetRowEl = area.querySelectorAll('.manual-settle-row')[nextIdx];
-        const targetInput = targetRowEl && targetRowEl.querySelector('.manual-settle-query');
-        if (targetInput) { targetInput.focus(); targetInput.select(); }
-      }
+      if (e.key === 'Escape') { closeSuggest(); return; }
     });
 
     qtyInput.addEventListener('input', e => { row.qty = e.target.value; updateManualSettleTotal(); });
