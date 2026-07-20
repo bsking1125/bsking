@@ -843,16 +843,21 @@ function applyAdditionStoreMap(map, sourceLabel) {
   showToast('총 재고에 반영했어요.');
 }
 function settleProduct(name, store, qty) {
-  if (!data.products[name]) return;
+  if (!data.products[name]) return false;
   const q = Math.max(0, Math.round(Number(qty) || 0));
-  if (q <= 0) return;
+  if (q <= 0) return false;
   const current = data.products[name].stores[store] || 0;
+  if (q > current) {
+    showToast('오류: "' + store + '" 의 "' + name + '" 미결 수량(' + current + '개)보다 많이 처리하려고 했어요 (' + q + '개). 미결 현황을 먼저 확인해주세요.');
+    return false;
+  }
   registerStore(store);
-  data.products[name].stores[store] = Math.max(0, current - q);
+  data.products[name].stores[store] = current - q;
   data.products[name].updatedAt = nowStamp();
   data.log.unshift({ date: nowStamp(), type: 'sub', product: name, store, qty: q, resultTotal: totalFor(name), resultStoreQty: data.products[name].stores[store], source: '매출처리' });
   saveData(); renderAll();
   showToast('매출처리로 ' + q + '개 차감했어요.');
+  return true;
 }
 
 function addMapping(raw, canonical, silent) {
@@ -1233,6 +1238,22 @@ document.getElementById('manualSettleConfirmBtn').addEventListener('click', () =
   const resolvedRows = manualSettleRows.map(r => ({ product: findProductByQuery(r.query), qty: Number(r.qty) || 0 }))
     .filter(r => r.product && r.qty > 0);
   if (!resolvedRows.length) { showToast('처리할 품목이 없어요. 품목명(또는 바코드)과 수량을 입력해주세요.'); return; }
+
+  // 같은 품목을 여러 줄에 나눠 적었을 수도 있으니 합쳐서, 미결 수량보다 많이 처리하려는 게 있으면
+  // 하나도 처리하지 않고 무엇이 문제인지 알려줘요.
+  const neededByProduct = {};
+  resolvedRows.forEach(r => { neededByProduct[r.product] = (neededByProduct[r.product] || 0) + r.qty; });
+  const shortages = Object.keys(neededByProduct).map(name => {
+    const current = (data.products[name] && data.products[name].stores[store]) || 0;
+    const needed = neededByProduct[name];
+    return needed > current ? { name, needed, current } : null;
+  }).filter(Boolean);
+  if (shortages.length) {
+    const msg = shortages.map(s => '"' + s.name + '" 미결 ' + s.current + '개 < 입력 ' + s.needed + '개').join(' / ');
+    showToast('오류: "' + store + '" 에 미결 수량이 부족해요 — ' + msg);
+    return;
+  }
+
   resolvedRows.forEach(r => settleProduct(r.product, store, r.qty));
   if (!data.feeTracking[store]) data.feeTracking[store] = {};
   data.feeTracking[store][month] = true;
